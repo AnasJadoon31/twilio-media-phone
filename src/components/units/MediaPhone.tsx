@@ -30,9 +30,12 @@ type QueuedAudioItem = {
     markName: string;
 };
 
+// Text input for direct AI testing (bypasses STT)
+const [textInput, setTextInput] = useState<string>("");
+
 export const MediaPhone = () => {
     const [logs, setLogs] = useState<LogEntry[]>([]);
-    const [url, setUrl] = useState<string>("http://localhost:5000/incoming-call");
+    const [url, setUrl] = useState<string>("https://voice-agent.anas31.qzz.io/voice/acme-corp");
 
     // Connection state
     const [isConnected, setIsConnected] = useState<boolean>(false);
@@ -564,6 +567,15 @@ export const MediaPhone = () => {
         wsRef.current?.send(JSON.stringify(message));
     }
 
+    const _sendText = () => {
+        const trimmed = textInput.trim();
+        if (!trimmed || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+
+        _sendMessageToClient('text', { text: trimmed });
+        addLog(`⌨️ Sent: "${trimmed}"`, 'info');
+        setTextInput('');
+    }
+
     /**
      * == RENDER UI ==
      */
@@ -580,7 +592,7 @@ export const MediaPhone = () => {
             <div className="bg-gray-100 p-4 rounded">
                 <div className="flex flex-col gap-2">
                     <Label>Connection url</Label>
-                    <Input type="text" className="bg-white" placeholder="http://localhost:5000/call/connect" value={url}
+                    <Input type="text" className="bg-white" placeholder="https://voice-agent.anas31.qzz.io/voice/acme-corp" value={url}
                            onChange={(e) => setUrl(e.target.value)}/>
                 </div>
             </div>
@@ -590,22 +602,20 @@ export const MediaPhone = () => {
                     variant={isConnected ? 'default' : 'secondary'}>{isConnected ? 'Connected' : 'Disconnected'}</Badge>
             </div>
             <div className="bg-gray-50 flex flex-row items-center p-4 rounded mt-4 gap-2">
-                <Button onClick={() => _connectToCall()}>Connect to call</Button>
-                <Button variant="secondary" onClick={() => _disconnectFromCall()}>Disconnect</Button>
+                <Input
+                    type="text"
+                    className="bg-white flex-1"
+                    placeholder="Type a message to send to AI (skips STT)..."
+                    value={textInput}
+                    onChange={(e) => setTextInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && _sendText()}
+                />
                 <Button
                     variant="outline"
-                    className={isMicEnabled
-                        ? "bg-green-500 hover:bg-green-600 text-white border-0 min-w-24"
-                        : "bg-red-500 hover:bg-red-600 text-white border-0 min-w-24"
-                    }
-                    onClick={() => {
-                        const next = !isMicEnabled;
-                        isMicEnabledRef.current = next;
-                        setIsMicEnabled(next);
-                        addLog(next ? '🎤 Mic ON' : '🔇 Mic OFF', 'info');
-                    }}
+                    onClick={_sendText}
+                    disabled={!isConnected}
                 >
-                    {isMicEnabled ? "🎤 Mic ON" : "🎤 Mic OFF"}
+                    ⌨️ Send
                 </Button>
             </div>
 
