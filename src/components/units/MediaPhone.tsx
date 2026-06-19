@@ -602,6 +602,25 @@ export const MediaPhone = () => {
                     variant={isConnected ? 'default' : 'secondary'}>{isConnected ? 'Connected' : 'Disconnected'}</Badge>
             </div>
             <div className="bg-gray-50 flex flex-row items-center p-4 rounded mt-4 gap-2">
+                <Button onClick={() => _connectToCall()}>Connect to call</Button>
+                <Button variant="secondary" onClick={() => _disconnectFromCall()}>Disconnect</Button>
+                <Button
+                    variant="outline"
+                    className={isMicEnabled
+                        ? "bg-green-500 hover:bg-green-600 text-white border-0 min-w-24"
+                        : "bg-red-500 hover:bg-red-600 text-white border-0 min-w-24"
+                    }
+                    onClick={() => {
+                        const next = !isMicEnabled;
+                        isMicEnabledRef.current = next;
+                        setIsMicEnabled(next);
+                        addLog(next ? '🎤 Mic ON' : '🔇 Mic OFF', 'info');
+                    }}
+                >
+                    {isMicEnabled ? "🎤 Mic ON" : "🎤 Mic OFF"}
+                </Button>
+            </div>
+            <div className="bg-gray-50 flex flex-row items-center p-4 rounded mt-4 gap-2">
                 <Input
                     type="text"
                     className="bg-white flex-1"
