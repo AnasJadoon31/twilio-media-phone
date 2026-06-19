@@ -63,8 +63,9 @@ export const MediaPhone = () => {
     // the client from wasting bandwidth (and avoids any edge-case echo).
     const isAiSpeakingRef = useRef<boolean>(false);
 
-    // Push-to-talk: mic is muted by default; only active while button is held.
-    const isMicEnabledRef = useRef<boolean>(false);
+    // Toggle mic: only send audio while mic is enabled.
+    const [isMicEnabled, setIsMicEnabled] = useState<boolean>(false);
+    const isMicEnabledRef = useRef<boolean>(false);  // synced copy for encoder
 
     /**
      * == UTILITY FUNCTIONS ==
@@ -582,21 +583,18 @@ export const MediaPhone = () => {
                 <Button variant="secondary" onClick={() => _disconnectFromCall()}>Disconnect</Button>
                 <Button
                     variant="outline"
-                    className="bg-red-500 hover:bg-red-600 text-white border-0 min-w-24"
-                    onMouseDown={() => {
-                        isMicEnabledRef.current = true;
-                        addLog('🎤 Mic ON (push-to-talk)', 'info');
-                    }}
-                    onMouseUp={() => {
-                        isMicEnabledRef.current = false;
-                        addLog('🔇 Mic OFF', 'info');
-                    }}
-                    onMouseLeave={() => {
-                        isMicEnabledRef.current = false;
-                        addLog('🔇 Mic OFF', 'info');
+                    className={isMicEnabled
+                        ? "bg-green-500 hover:bg-green-600 text-white border-0 min-w-24"
+                        : "bg-red-500 hover:bg-red-600 text-white border-0 min-w-24"
+                    }
+                    onClick={() => {
+                        const next = !isMicEnabled;
+                        isMicEnabledRef.current = next;
+                        setIsMicEnabled(next);
+                        addLog(next ? '🎤 Mic ON' : '🔇 Mic OFF', 'info');
                     }}
                 >
-                    🎤 Hold to Speak
+                    {isMicEnabled ? "🎤 Mic ON" : "🎤 Mic OFF"}
                 </Button>
             </div>
 
