@@ -423,6 +423,18 @@ export const MediaPhone = () => {
                 case 'pong':
                     // Keepalive response — nothing to do
                     break;
+
+                case 'transcription':
+                    addLog(`📝 STT: "${message.text}" (${message.language}, conf: ${message.confidence})`, 'success');
+                    break;
+
+                case 'response':
+                    addLog(`🤖 AI: "${message.text}"`, 'info');
+                    break;
+
+                case 'busy':
+                    addLog('⏳ Busy — still processing previous response, ignoring input', 'error');
+                    break;
             }
 
         } catch (error: any) {
