@@ -30,15 +30,15 @@ type QueuedAudioItem = {
     markName: string;
 };
 
-// Text input for direct AI testing (bypasses STT)
-const [textInput, setTextInput] = useState<string>("");
-
 export const MediaPhone = () => {
     const [logs, setLogs] = useState<LogEntry[]>([]);
     const [url, setUrl] = useState<string>("https://voice-agent.anas31.qzz.io/voice/acme-corp");
 
     // Connection state
     const [isConnected, setIsConnected] = useState<boolean>(false);
+
+    // Text input for direct AI testing (bypasses STT)
+    const [textInput, setTextInput] = useState<string>("");
 
     // Call management
     const isDisconnecting = useRef(false);
