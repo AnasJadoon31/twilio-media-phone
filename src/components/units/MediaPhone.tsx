@@ -409,6 +409,17 @@ export const MediaPhone = () => {
                     isAiSpeakingRef.current = false;
                     clearAudioBuffer();
                     break;
+
+                case 'ping':
+                    // Keepalive from server — respond with pong
+                    if (wsRef.current?.readyState === WebSocket.OPEN) {
+                        wsRef.current.send(JSON.stringify({ event: 'pong' }));
+                    }
+                    break;
+
+                case 'pong':
+                    // Keepalive response — nothing to do
+                    break;
             }
 
         } catch (error: any) {
