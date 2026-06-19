@@ -58,6 +58,14 @@ export const MediaPhone = () => {
     const ulawDecoderNodeRef = useRef<AudioWorkletNode|null>(null);
     const [isPlaying, setIsPlaying] = useState<boolean>(false);
 
+    // Defense-in-depth: mute outgoing mic data while AI audio is playing.
+    // The server also drops media during SPEAKING state, but this prevents
+    // the client from wasting bandwidth (and avoids any edge-case echo).
+    const isAiSpeakingRef = useRef<boolean>(false);
+
+    // Push-to-talk: mic is muted by default; only active while button is held.
+    const isMicEnabledRef = useRef<boolean>(false);
+
     /**
      * == UTILITY FUNCTIONS ==
      */
@@ -205,6 +213,12 @@ export const MediaPhone = () => {
             const encoderWorkletNode = new AudioWorkletNode(audioContextRef.current, 'ulaw-processor');
 
             encoderWorkletNode.port.onmessage = (event: MessageEvent) => {
+                // Drop mic data while AI is speaking (defense-in-depth).
+                if (isAiSpeakingRef.current) return;
+
+                // Push-to-talk: only send audio while mic button is held.
+                if (!isMicEnabledRef.current) return;
+
                 if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && streamSidRef.current) {
                     const ulawBytes: Uint8Array = event.data;
                     const base64 = btoa(String.fromCharCode(...ulawBytes))
@@ -250,6 +264,13 @@ export const MediaPhone = () => {
                         );
                         addLog(`Mark processed: ${markName}`, 'success');
                     }
+
+                    // AI audio playback finished — re-enable mic encoder.
+                    // Only re-enable if the queue is empty (no more AI audio pending).
+                    if (audioBufferQueueRef.current.length === 0) {
+                        isAiSpeakingRef.current = false;
+                        addLog('AI playback complete — mic re-enabled', 'info');
+                    }
                 } else if (event.data.type === 'bufferQueued') {
                     if (event.data.queueLength > 5) {
                         addLog(`Audio queue length: ${event.data.queueLength}`, 'info');
@@ -259,8 +280,10 @@ export const MediaPhone = () => {
                 }
             };
             
-            // Connect encoder to audio output
-            source.connect(encoderWorkletNode).connect(audioContextRef.current.destination);
+            // Connect encoder to worklet ONLY (do NOT route mic to speakers).
+            // The AI audio is played separately through ulawDecoderNode → destination.
+            // Routing mic to speakers creates a local feedback loop (echo).
+            source.connect(encoderWorkletNode);
 
             addLog('Audio processing pipeline set up', 'success');
             nextStartTimeRef.current = audioContextRef.current.currentTime;
@@ -369,6 +392,8 @@ export const MediaPhone = () => {
 
             switch (message.event) {
                 case 'media':
+                    // AI audio is arriving — mute the mic encoder until playback finishes.
+                    isAiSpeakingRef.current = true;
                     processMediaMessage(message);
                     break;
 
@@ -380,6 +405,7 @@ export const MediaPhone = () => {
 
                 case 'clear':
                     addLog('Clear received - stopping audio playback');
+                    isAiSpeakingRef.current = false;
                     clearAudioBuffer();
                     break;
             }
@@ -554,6 +580,24 @@ export const MediaPhone = () => {
             <div className="bg-gray-50 flex flex-row items-center p-4 rounded mt-4 gap-2">
                 <Button onClick={() => _connectToCall()}>Connect to call</Button>
                 <Button variant="secondary" onClick={() => _disconnectFromCall()}>Disconnect</Button>
+                <Button
+                    variant="outline"
+                    className="bg-red-500 hover:bg-red-600 text-white border-0 min-w-24"
+                    onMouseDown={() => {
+                        isMicEnabledRef.current = true;
+                        addLog('🎤 Mic ON (push-to-talk)', 'info');
+                    }}
+                    onMouseUp={() => {
+                        isMicEnabledRef.current = false;
+                        addLog('🔇 Mic OFF', 'info');
+                    }}
+                    onMouseLeave={() => {
+                        isMicEnabledRef.current = false;
+                        addLog('🔇 Mic OFF', 'info');
+                    }}
+                >
+                    🎤 Hold to Speak
+                </Button>
             </div>
 
             <div className="bg-white border-1 border-gray-200 rounded mt-4">
