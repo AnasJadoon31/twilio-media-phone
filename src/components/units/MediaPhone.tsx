@@ -347,18 +347,21 @@ export const MediaPhone = () => {
      */
     const _connectToMediaStream = async (streamUri: string) => {
         addLog(`Connecting to media stream at ${streamUri}`, 'info');
+        console.log('[WS] Connecting to:', streamUri);
 
-        const connectionTimeout = setTimeout(() => {
-            if (wsRef.current && wsRef.current.readyState !== WebSocket.CLOSED) {
+        let connectionTimeout: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+            connectionTimeout = null;
+            if (wsRef.current && wsRef.current.readyState !== WebSocket.OPEN) {
+                const state = wsRef.current.readyState;
+                addLog(`Connection timed out after 10s (readyState=${state})`, 'error');
                 wsRef.current.close();
-                addLog('Connection timed out after 10 seconds', 'error');
             }
-        }, 10000); // 10 seconds timeout for connection
+        }, 10000);
 
         wsRef.current = new WebSocket(streamUri);
 
         wsRef.current.addEventListener("open", () => {
-            clearTimeout(connectionTimeout);
+            if (connectionTimeout) { clearTimeout(connectionTimeout); connectionTimeout = null; }
             addLog('Media server connection established', 'success');
 
             // Let server know we are ready to start the call
@@ -376,16 +379,32 @@ export const MediaPhone = () => {
         })
 
         wsRef.current.addEventListener("close", (event: CloseEvent) => {
-            setIsConnected(false)
+            if (connectionTimeout) { clearTimeout(connectionTimeout); connectionTimeout = null; }
+            console.log(`[WS] Closed — code=${event.code} reason="${event.reason}" wasClean=${event.wasClean}`);
+
+            if (isDisconnecting.current) {
+                // User-initiated disconnect
+                addLog(`🔌 Disconnected by user`, 'info');
+            } else if (event.code === 4001) {
+                addLog(`🔒 Disconnected: authentication failed (bad token)`, 'error');
+            } else if (event.code === 1006) {
+                addLog(`⚠️  Disconnected: abnormal closure — likely proxy/network issue (code 1006)`, 'error');
+            } else if (event.wasClean) {
+                addLog(`🔌 Disconnected cleanly (code=${event.code})`, 'info');
+            } else {
+                addLog(`❌ Disconnected unexpectedly: code=${event.code} reason="${event.reason || 'none'}"`, 'error');
+            }
+
+            setIsConnected(false);
         })
 
         wsRef.current.addEventListener("message", _handleWebSocketMessage)
 
         wsRef.current.addEventListener("error", (error: Event) => {
-            addLog(`WebSocket error: ${error}`, 'error');
-            if (wsRef.current) {
-                wsRef.current.close();
-            }
+            if (connectionTimeout) { clearTimeout(connectionTimeout); connectionTimeout = null; }
+            console.error('[WS] Error event — full details:', error);
+            // The error event carries no useful info itself; the close event will follow with the actual code.
+            addLog(`⚠️  WebSocket error — close event will follow with details`, 'error');
         })
     }
 
@@ -476,10 +495,8 @@ export const MediaPhone = () => {
 
     const _closeMediaServerConnection = (statusCode: number, statusMessage: string) => {
         if (!wsRef.current) return;
-
         wsRef.current.close(statusCode, statusMessage);
         wsRef.current = null;
-        addLog('WebSocket connection closed', 'success');
     };
 
     /**
@@ -518,36 +535,30 @@ export const MediaPhone = () => {
      * Clean up and disconnect from the call.
      */
     const _disconnectFromCall = () => {
-        console.log('Disconnecting from call');
-
         if (isDisconnecting.current) return;
+        isDisconnecting.current = true;  // signal to close handler that this is intentional
 
-        if (wsRef.current) {
-            if (wsRef.current.readyState === WebSocket.OPEN) {
-                _sendMessageToClient(
-                    'stop',
-                    {
-                        sequenceNumber: sequenceNumberRef.current++,
-                        stop: {
-                            callSid: callSidRef.current
-                        },
-                        streamSid: streamSidRef.current
-                    }
-                )
+        addLog('🔌 Disconnecting from call…', 'info');
 
-                addLog(`Sent stop message to media server`, 'info');
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+            _sendMessageToClient(
+                'stop',
+                {
+                    sequenceNumber: sequenceNumberRef.current++,
+                    stop: {
+                        callSid: callSidRef.current
+                    },
+                    streamSid: streamSidRef.current
+                }
+            );
 
-                setTimeout(() => {
-                    if (wsRef.current) {
-                        _closeMediaServerConnection(1000, 'User disconnected');
-                    }
-                }, 100) // Wait for the message to be sent before closing
-                addLog('WebSocket connection closed', 'info');
-            }
-
-            if (wsRef.current) {
+            // Give the stop message a moment to send, then close cleanly
+            setTimeout(() => {
                 _closeMediaServerConnection(1000, 'User disconnected');
-            }
+            }, 150);
+        } else if (wsRef.current) {
+            // Already closing/closed — force cleanup
+            _closeMediaServerConnection(1000, 'User disconnected');
         }
 
         ulawDecoderNodeRef.current = null;
@@ -556,13 +567,10 @@ export const MediaPhone = () => {
             try {
                 audioContextRef.current.close();
                 audioContextRef.current = null;
-                addLog('Audio context closed', 'info');
-            } catch (error: any) {
+            } catch (_) {
                 audioContextRef.current = null;
             }
         }
-
-        isDisconnecting.current = true;
     }
 
     const _sendMessageToClient = (event: string, data: Record<string, any>) => {
