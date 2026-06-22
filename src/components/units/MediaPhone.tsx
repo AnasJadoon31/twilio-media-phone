@@ -461,6 +461,17 @@ export const MediaPhone = () => {
                     addLog(`🤖 AI: "${message.text}"`, 'info');
                     break;
 
+                case 'ai_core':
+                    addLog(
+                        message.message || (
+                            message.reachable
+                                ? 'AI Core reachable. Commands will use AI Core first.'
+                                : 'AI Core unavailable. Commands will still try AI Core before fallback.'
+                        ),
+                        message.reachable ? 'success' : 'error'
+                    );
+                    break;
+
                 case 'mic': {
                     const locked = message.enabled === false;
                     isServerMicLockedRef.current = locked;
