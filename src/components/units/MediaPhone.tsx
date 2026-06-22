@@ -69,6 +69,8 @@ export const MediaPhone = () => {
     // Toggle mic: only send audio while mic is enabled.
     const [isMicEnabled, setIsMicEnabled] = useState<boolean>(false);
     const isMicEnabledRef = useRef<boolean>(false);  // synced copy for encoder
+    const [isServerMicLocked, setIsServerMicLocked] = useState<boolean>(false);
+    const isServerMicLockedRef = useRef<boolean>(false);
 
     /**
      * == UTILITY FUNCTIONS ==
@@ -219,6 +221,10 @@ export const MediaPhone = () => {
             encoderWorkletNode.port.onmessage = (event: MessageEvent) => {
                 // Drop mic data while AI is speaking (defense-in-depth).
                 if (isAiSpeakingRef.current) return;
+
+                // Server-controlled lock: do not send mic audio while a command
+                // is being transcribed, answered, or played back.
+                if (isServerMicLockedRef.current) return;
 
                 // Push-to-talk: only send audio while mic button is held.
                 if (!isMicEnabledRef.current) return;
@@ -447,8 +453,31 @@ export const MediaPhone = () => {
                     addLog(`📝 STT: "${message.text}" (${message.language}, conf: ${message.confidence})`, 'success');
                     break;
 
+                case 'processing':
+                    addLog(`⏳ ${message.message || 'Command is processing'}`, 'info');
+                    break;
+
                 case 'response':
                     addLog(`🤖 AI: "${message.text}"`, 'info');
+                    break;
+
+                case 'mic': {
+                    const locked = message.enabled === false;
+                    isServerMicLockedRef.current = locked;
+                    setIsServerMicLocked(locked);
+                    addLog(
+                        locked
+                            ? '🔇 Mic disabled while previous command is processing'
+                            : '🎤 Mic available for next command',
+                        'info'
+                    );
+                    break;
+                }
+
+                case 'ready':
+                    isServerMicLockedRef.current = false;
+                    setIsServerMicLocked(false);
+                    addLog(`✅ ${message.message || 'Ready for your next command.'}`, 'success');
                     break;
 
                 case 'busy':
@@ -630,6 +659,7 @@ export const MediaPhone = () => {
                         ? "bg-green-500 hover:bg-green-600 text-white border-0 min-w-24"
                         : "bg-red-500 hover:bg-red-600 text-white border-0 min-w-24"
                     }
+                    disabled={isServerMicLocked}
                     onClick={() => {
                         const next = !isMicEnabled;
                         isMicEnabledRef.current = next;
@@ -637,9 +667,14 @@ export const MediaPhone = () => {
                         addLog(next ? '🎤 Mic ON' : '🔇 Mic OFF', 'info');
                     }}
                 >
-                    {isMicEnabled ? "🎤 Mic ON" : "🎤 Mic OFF"}
+                    {isServerMicLocked ? "⏳ Processing" : isMicEnabled ? "🎤 Mic ON" : "🎤 Mic OFF"}
                 </Button>
             </div>
+            {isServerMicLocked && (
+                <div className="bg-amber-50 border border-amber-200 text-amber-900 p-3 rounded mt-4 text-sm">
+                    Previous command is processing. Mic is temporarily disabled.
+                </div>
+            )}
             <div className="bg-gray-50 flex flex-row items-center p-4 rounded mt-4 gap-2">
                 <Input
                     type="text"
@@ -648,11 +683,12 @@ export const MediaPhone = () => {
                     value={textInput}
                     onChange={(e) => setTextInput(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && _sendText()}
+                    disabled={isServerMicLocked}
                 />
                 <Button
                     variant="outline"
                     onClick={_sendText}
-                    disabled={!isConnected}
+                    disabled={!isConnected || isServerMicLocked}
                 >
                     ⌨️ Send
                 </Button>
