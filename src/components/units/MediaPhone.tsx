@@ -458,15 +458,20 @@ export const MediaPhone = () => {
                     break;
 
                 case 'response':
-                    addLog(`🤖 AI: "${message.text}"`, 'info');
+                    addLog(
+                        message.internal_session_id
+                            ? `🤖 AI: "${message.text}" (session: ${message.internal_session_id})`
+                            : `🤖 AI: "${message.text}"`,
+                        'info'
+                    );
                     break;
 
                 case 'ai_core':
                     addLog(
                         message.message || (
                             message.reachable
-                                ? 'AI Core reachable. Commands will use AI Core first.'
-                                : 'AI Core unavailable. Commands will still try AI Core before fallback.'
+                                ? 'AI Core chat endpoint reachable. Commands will use AI Core first.'
+                                : 'AI Core chat endpoint unavailable. Commands will still try AI Core before fallback.'
                         ),
                         message.reachable ? 'success' : 'error'
                     );
