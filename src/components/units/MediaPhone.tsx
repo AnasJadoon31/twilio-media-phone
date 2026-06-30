@@ -33,6 +33,7 @@ type QueuedAudioItem = {
 export const MediaPhone = () => {
     const [logs, setLogs] = useState<LogEntry[]>([]);
     const [url, setUrl] = useState<string>("https://voice-agent.anas31.qzz.io/voice/acme-corp");
+    const [activeDepartment, setActiveDepartment] = useState<string>("");
 
     // Connection state
     const [isConnected, setIsConnected] = useState<boolean>(false);
@@ -336,9 +337,12 @@ export const MediaPhone = () => {
             const twimlResponse = await response.text();
             addLog('Received steam connection response from media server', 'success');
 
-            const streamUri = extractStreamUrlFromTwiml(twimlResponse);
+            let streamUri = extractStreamUrlFromTwiml(twimlResponse);
             if (!streamUri) {
                 throw new Error('No stream URL found in TwiML response');
+            }
+            if (activeDepartment.trim()) {
+                streamUri += `&active_department=${encodeURIComponent(activeDepartment.trim())}`;
             }
 
             return streamUri;
@@ -417,7 +421,10 @@ export const MediaPhone = () => {
     const _handleWebSocketMessage = useCallback((event: MessageEvent) => {
         try {
             const message = JSON.parse(event.data);
-            addLog(`Received ${message.event}`, 'info')
+            
+            if (message.event !== 'media') {
+                addLog(`Received ${message.event}: ${JSON.stringify(message)}`, 'info');
+            }
 
             switch (message.event) {
                 case 'media':
@@ -659,6 +666,11 @@ export const MediaPhone = () => {
                     <Label>Connection url</Label>
                     <Input type="text" className="bg-white" placeholder="https://voice-agent.anas31.qzz.io/voice/acme-corp" value={url}
                            onChange={(e) => setUrl(e.target.value)}/>
+                </div>
+                <div className="flex flex-col gap-2 mt-4">
+                    <Label>Active Department (optional)</Label>
+                    <Input type="text" className="bg-white" placeholder="housekeeping" value={activeDepartment}
+                           onChange={(e) => setActiveDepartment(e.target.value)}/>
                 </div>
             </div>
             <div className="bg-gray-50 flex flex-row items-center p-4 rounded mt-4 gap-2">
