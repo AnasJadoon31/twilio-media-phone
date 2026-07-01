@@ -1,4 +1,5 @@
-import { Activity, Clock, Server, ArrowRight, CheckCircle2, AlertTriangle, Users, Bot, Code, Languages, FileText, ChevronRight, MessageSquare, Search } from "lucide-react";
+import { Activity, Clock, Server, ArrowRight, CheckCircle2, AlertTriangle, Users, Bot, Code, Languages, FileText, ChevronRight, MessageSquare, Search, History, ChevronDown, ChevronUp } from "lucide-react";
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CallSelector } from "./CallSelector";
@@ -12,12 +13,14 @@ interface DiagnosticsDashboardProps {
 }
 
 export const DiagnosticsDashboard = ({ data, onClose, aiCoreUrl, apiKey, onFetchCall }: DiagnosticsDashboardProps) => {
+    const [expandedTurn, setExpandedTurn] = useState<number | null>(null);
     
     // Always render the dashboard framework so the user can use the search bar
     const {
         session_summary = {},
         routing_metrics = {},
         latest_turn_diagnostic = {},
+        turn_diagnostics = [],
         call_id,
         session_id,
         confirmed_language,
@@ -50,7 +53,7 @@ export const DiagnosticsDashboard = ({ data, onClose, aiCoreUrl, apiKey, onFetch
                             apiKey={apiKey} 
                         />
                     </div>
-                    <Button variant="outline" onClick={onClose} className="border-neutral-700 hover:bg-neutral-800 text-neutral-300">
+                    <Button onClick={onClose} className="bg-red-600 hover:bg-red-700 text-white border-red-500 shadow-md">
                         Close Dashboard
                     </Button>
                 </div>
@@ -231,6 +234,74 @@ export const DiagnosticsDashboard = ({ data, onClose, aiCoreUrl, apiKey, onFetch
                                             </p>
                                         </div>
                                     ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Full Chat History Section */}
+                        {turn_diagnostics && turn_diagnostics.length > 0 && (
+                            <div className="bg-neutral-900 rounded-xl border border-neutral-800 p-6">
+                                <div className="flex items-center gap-2 mb-6 text-neutral-400">
+                                    <History className="w-4 h-4" />
+                                    <h2 className="font-semibold text-sm uppercase tracking-wider">Full Chat History</h2>
+                                </div>
+                                <div className="space-y-4">
+                                    {turn_diagnostics.map((turn: any, index: number) => {
+                                        const isExpanded = expandedTurn === index;
+                                        // Find the main route
+                                        const mainRoute = turn.tasks && turn.tasks.length > 0 ? turn.tasks[0].route : "Unknown Route";
+                                        
+                                        return (
+                                            <div key={index} className="bg-neutral-950 border border-neutral-800 rounded-lg overflow-hidden">
+                                                <div 
+                                                    className="p-4 cursor-pointer hover:bg-neutral-900 transition-colors flex items-center justify-between"
+                                                    onClick={() => setExpandedTurn(isExpanded ? null : index)}
+                                                >
+                                                    <div className="flex-1 min-w-0 pr-4">
+                                                        <p className="text-emerald-300 font-medium truncate">User: "{turn.caller_text_original}"</p>
+                                                        <p className="text-neutral-400 text-sm truncate mt-1">Agent: {turn.response_text}</p>
+                                                    </div>
+                                                    <div className="flex items-center gap-4 flex-shrink-0">
+                                                        <Badge variant="outline" className="bg-blue-950 text-blue-400 border-blue-900">
+                                                            Route: {mainRoute}
+                                                        </Badge>
+                                                        {isExpanded ? <ChevronUp className="w-4 h-4 text-neutral-500" /> : <ChevronDown className="w-4 h-4 text-neutral-500" />}
+                                                    </div>
+                                                </div>
+                                                {isExpanded && (
+                                                    <div className="p-4 border-t border-neutral-800 bg-neutral-900/50 space-y-4 text-sm">
+                                                        {/* Detailed break down */}
+                                                        <div>
+                                                            <h4 className="text-xs uppercase text-neutral-500 mb-1">User Said</h4>
+                                                            <p className="text-emerald-300">"{turn.caller_text_original}"</p>
+                                                        </div>
+                                                        <div>
+                                                            <h4 className="text-xs uppercase text-neutral-500 mb-1">Agent Replied</h4>
+                                                            <p className="text-neutral-300">"{turn.response_text}"</p>
+                                                        </div>
+                                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-neutral-950 p-3 rounded-md border border-neutral-800">
+                                                            <div>
+                                                                <span className="block text-[10px] text-neutral-500 uppercase">Route Called</span>
+                                                                <span className="font-mono text-blue-400">{mainRoute}</span>
+                                                            </div>
+                                                            <div>
+                                                                <span className="block text-[10px] text-neutral-500 uppercase">Intent</span>
+                                                                <span className="text-neutral-300">{turn.tasks?.[0]?.intent || 'N/A'}</span>
+                                                            </div>
+                                                            <div>
+                                                                <span className="block text-[10px] text-neutral-500 uppercase">Latency</span>
+                                                                <span className="font-mono text-neutral-300">{turn.latency_ms ? turn.latency_ms.toFixed(1) : '---'} ms</span>
+                                                            </div>
+                                                            <div>
+                                                                <span className="block text-[10px] text-neutral-500 uppercase">Confidence</span>
+                                                                <span className="text-emerald-400">{turn.stt_confidence ? (turn.stt_confidence * 100).toFixed(1) + '%' : '---'}</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )
+                                    })}
                                 </div>
                             </div>
                         )}
