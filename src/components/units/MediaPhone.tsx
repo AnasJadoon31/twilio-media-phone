@@ -47,7 +47,7 @@ export const MediaPhone = () => {
     const [textInput, setTextInput] = useState<string>("");
 
     // Diagnostics State
-    const [aiCoreUrl, setAiCoreUrl] = useState<string>("http://localhost:8000");
+    const [aiCoreUrl, setAiCoreUrl] = useState<string>(process.env.NEXT_PUBLIC_AI_CORE_URL || "https://api.operaios.qzz.io");
     const [apiKey, setApiKey] = useState<string>("dev-secret");
     const [diagnosticCallSid, setDiagnosticCallSid] = useState<string>("");
     const [isFetchingDiagnostics, setIsFetchingDiagnostics] = useState<boolean>(false);
