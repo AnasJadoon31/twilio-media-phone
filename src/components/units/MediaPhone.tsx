@@ -17,6 +17,8 @@ type LogEntry = {
     type: LogEntryType;
     category: LogCategory;
     details?: any;
+    totalLatencyMs?: number;
+    backendLatencyMs?: number;
 }
 
 type MediaMessage = {
@@ -35,6 +37,27 @@ type QueuedAudioItem = {
     markName: string;
 };
 
+const ThinkingBubble = () => {
+    const [dots, setDots] = useState('');
+    const phrases = ["Thinking", "Searching through the registers", "Analyzing intent", "Formulating response"];
+    const [phraseIndex, setPhraseIndex] = useState(0);
+
+    useEffect(() => {
+        const dotInterval = setInterval(() => {
+            setDots(prev => prev.length >= 3 ? '' : prev + '.');
+        }, 500);
+        const phraseInterval = setInterval(() => {
+            setPhraseIndex(prev => (prev + 1) % phrases.length);
+        }, 2000);
+        return () => {
+            clearInterval(dotInterval);
+            clearInterval(phraseInterval);
+        };
+    }, []);
+
+    return <span>{phrases[phraseIndex]}{dots}</span>;
+}
+
 export const MediaPhone = () => {
     const [logs, setLogs] = useState<LogEntry[]>([]);
     const [url, setUrl] = useState<string>("https://voice-agent.anas31.qzz.io/voice/acme-corp");
@@ -45,6 +68,9 @@ export const MediaPhone = () => {
 
     // Text input for direct AI testing (bypasses STT)
     const [textInput, setTextInput] = useState<string>("");
+
+    const [activeTab, setActiveTab] = useState<'logs' | 'stats'>('logs');
+    const lastSttTimestampRef = useRef<number | null>(null);
 
     // Diagnostics State
     const [aiCoreUrl, setAiCoreUrl] = useState<string>(process.env.NEXT_PUBLIC_AI_CORE_URL || "https://api.operaios.qzz.io");
@@ -506,6 +532,7 @@ export const MediaPhone = () => {
                     break;
 
                 case 'transcription':
+                    lastSttTimestampRef.current = Date.now();
                     addLog(`📝 STT: "${message.text}" (${message.language}, conf: ${message.confidence})`, 'success', 'transcription');
                     break;
 
@@ -513,15 +540,28 @@ export const MediaPhone = () => {
                     addLog(`⏳ ${message.message || 'Command is processing'}`, 'info');
                     break;
 
-                case 'response':
-                    addLog(
-                        message.internal_session_id
+                case 'response': {
+                    let totalLatency: number | undefined;
+                    if (lastSttTimestampRef.current) {
+                        totalLatency = Date.now() - lastSttTimestampRef.current;
+                        lastSttTimestampRef.current = null;
+                    }
+                    const backendLatency = message.backend_latency_ms;
+                    
+                    const timestampStr = new Date().toLocaleTimeString();
+                    setLogs(prev => [...prev.slice(-199), {
+                        id: Math.random().toString(36).substring(2, 9),
+                        timestamp: timestampStr,
+                        message: message.internal_session_id
                             ? `🤖 AI: "${message.text}" (session: ${message.internal_session_id})`
                             : `🤖 AI: "${message.text}"`,
-                        'info',
-                        'ai_response'
-                    );
+                        type: 'info',
+                        category: 'ai_response',
+                        totalLatencyMs: totalLatency,
+                        backendLatencyMs: backendLatency
+                    }]);
                     break;
+                }
 
                 case 'ai_core':
                     addLog(
@@ -710,7 +750,7 @@ export const MediaPhone = () => {
     }, []);
 
     return (
-        <div className="flex h-[calc(100vh-4rem)] max-h-screen bg-neutral-950 text-neutral-50 font-sans overflow-hidden">
+        <div className="flex h-screen w-screen max-h-screen bg-neutral-950 text-neutral-50 font-sans overflow-hidden">
             {/* MAIN COLUMN: Chat Interface */}
             <div className="flex-1 flex flex-col border-r border-neutral-800 relative">
                 {/* Header */}
@@ -759,27 +799,46 @@ export const MediaPhone = () => {
 
                 {/* Chat Area */}
                 <div className="flex-1 overflow-y-auto p-6 space-y-6 scroll-smooth">
-                    {logs.filter(l => l.category === 'transcription' || l.category === 'ai_response').length === 0 ? (
+                    {logs.filter(l => l.category === 'transcription' || l.category === 'ai_response').length === 0 && !isServerMicLocked ? (
                         <div className="h-full flex flex-col items-center justify-center text-neutral-600 gap-4">
                             <MessageSquare className="w-12 h-12 opacity-20" />
                             <p className="text-sm uppercase tracking-widest opacity-50">No conversation yet</p>
                         </div>
                     ) : (
-                        logs.filter(l => l.category === 'transcription' || l.category === 'ai_response').map(log => (
-                            <div key={log.id} className={`flex w-full ${log.category === 'transcription' ? 'justify-end' : 'justify-start'}`}>
-                                <div className={`max-w-[80%] rounded-2xl p-4 ${log.category === 'transcription'
-                                    ? 'bg-emerald-900/40 text-emerald-100 border border-emerald-800/50 rounded-tr-sm'
-                                    : 'bg-neutral-800 border border-neutral-700 text-neutral-200 rounded-tl-sm'}`}>
-                                    <div className="flex items-center gap-2 mb-1 opacity-60 text-xs">
-                                        <span>{log.category === 'transcription' ? 'You' : 'AI Agent'}</span>
-                                        <span className="text-[10px]">{log.timestamp}</span>
-                                    </div>
-                                    <div className="text-[15px] leading-relaxed">
-                                        {log.message.replace(/^(📝 STT: |🤖 AI: )/, '').replace(/^"(.*)"$/, '$1').replace(/" \(.*/, '"')}
+                        <>
+                            {logs.filter(l => l.category === 'transcription' || l.category === 'ai_response').map(log => (
+                                <div key={log.id} className={`flex w-full ${log.category === 'transcription' ? 'justify-end' : 'justify-start'}`}>
+                                    <div className={`max-w-[80%] rounded-2xl p-4 ${log.category === 'transcription'
+                                        ? 'bg-emerald-900/40 text-emerald-100 border border-emerald-800/50 rounded-tr-sm'
+                                        : 'bg-neutral-800 border border-neutral-700 text-neutral-200 rounded-tl-sm'}`}>
+                                        <div className="flex items-center gap-2 mb-1 opacity-60 text-xs">
+                                            <span>{log.category === 'transcription' ? 'You' : 'AI Agent'}</span>
+                                            <span className="text-[10px]">{log.timestamp}</span>
+                                            {log.totalLatencyMs && (
+                                                <span className="text-[10px] ml-auto">
+                                                    (Total: {log.totalLatencyMs}ms{log.backendLatencyMs ? `, Backend: ${log.backendLatencyMs.toFixed(0)}ms` : ''})
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="text-base leading-relaxed">
+                                            {log.message.replace(/^(📝 STT: |🤖 AI: )/, '').replace(/^"(.*)"$/, '$1').split('" (')[0]}
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        ))
+                            ))}
+                            {isServerMicLocked && (
+                                <div className="flex w-full justify-start">
+                                    <div className="max-w-[80%] rounded-2xl p-4 bg-neutral-800 border border-neutral-700 text-neutral-400 rounded-tl-sm">
+                                        <div className="flex items-center gap-2 mb-1 opacity-60 text-xs">
+                                            <span>AI Agent</span>
+                                        </div>
+                                        <div className="text-base leading-relaxed italic animate-pulse">
+                                            <ThinkingBubble />
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </>
                     )}
                 </div>
 
@@ -800,6 +859,9 @@ export const MediaPhone = () => {
                                 isMicEnabledRef.current = next;
                                 setIsMicEnabled(next);
                                 addLog(next ? 'Mic ON' : 'Mic OFF', 'info', 'system');
+                                if (!next && isConnected && wsRef.current?.readyState === WebSocket.OPEN) {
+                                    wsRef.current.send(JSON.stringify({ event: "flush_audio" }));
+                                }
                             }}
                         >
                             {isServerMicLocked ? (
@@ -845,71 +907,81 @@ export const MediaPhone = () => {
                 </div>
             </div>
 
-            {/* SIDE PANEL: Technical Logs */}
-            <div className="w-96 flex flex-col bg-neutral-900 border-l border-neutral-800">
-                <div className="p-4 border-b border-neutral-800">
-                    <h2 className="font-semibold text-neutral-200 flex items-center gap-2">
-                        <Terminal className="w-4 h-4" /> System & Diagnostics
-                    </h2>
+            {/* SIDE PANEL: Technical Logs & Stats */}
+            <div className="w-[450px] flex flex-col bg-neutral-900 border-l border-neutral-800">
+                <div className="flex border-b border-neutral-800">
+                    <button 
+                        onClick={() => setActiveTab('logs')}
+                        className={`flex-1 p-4 font-semibold text-sm flex items-center justify-center gap-2 transition-colors ${activeTab === 'logs' ? 'bg-neutral-800 text-neutral-200 border-b-2 border-emerald-500' : 'text-neutral-500 hover:text-neutral-300'}`}
+                    >
+                        <Terminal className="w-4 h-4" /> System Logs
+                    </button>
+                    <button 
+                        onClick={() => setActiveTab('stats')}
+                        className={`flex-1 p-4 font-semibold text-sm flex items-center justify-center gap-2 transition-colors ${activeTab === 'stats' ? 'bg-neutral-800 text-neutral-200 border-b-2 border-emerald-500' : 'text-neutral-500 hover:text-neutral-300'}`}
+                    >
+                        <Activity className="w-4 h-4" /> Call Stats
+                    </button>
                 </div>
 
-                <div className="p-4 border-b border-neutral-800 bg-neutral-950/50 space-y-3">
-                    <div className="grid grid-cols-2 gap-2">
-                        <div className="space-y-1">
-                            <Label className="text-[10px] text-neutral-500 uppercase">AI Core URL</Label>
-                            <Input size={1} className="h-7 text-xs bg-neutral-900 text-neutral-300 border-neutral-800" value={aiCoreUrl} onChange={e => setAiCoreUrl(e.target.value)} />
-                        </div>
-                        <div className="space-y-1">
-                            <Label className="text-[10px] text-neutral-500 uppercase">API Key</Label>
-                            <Input type="password" size={1} className="h-7 text-xs bg-neutral-900 text-neutral-300 border-neutral-800" value={apiKey} onChange={e => setApiKey(e.target.value)} />
-                        </div>
-                    </div>
-                    <div className="flex gap-2">
-                        <Input
-                            placeholder="Specific Call SID (optional)"
-                            className="h-8 text-xs bg-neutral-900 text-neutral-300 border-neutral-800"
-                            value={diagnosticCallSid}
-                            onChange={e => setDiagnosticCallSid(e.target.value)}
-                        />
-                        <Button
-                            size="sm"
-                            variant="secondary"
-                            className="h-8 text-xs whitespace-nowrap bg-neutral-800 text-neutral-200 hover:bg-neutral-700 border border-neutral-700"
-                            onClick={() => fetchDiagnostics(diagnosticCallSid)}
-                            disabled={isFetchingDiagnostics}
-                        >
-                            {isFetchingDiagnostics ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Activity className="w-3 h-3 mr-1" />} Pull Stats
-                        </Button>
-                    </div>
-                </div>
-
-                <div className="flex-1 overflow-y-auto p-3 space-y-2">
-                    {logs.filter(l => l.category !== 'transcription' && l.category !== 'ai_response').length === 0 ? (
-                        <p className="text-neutral-600 text-xs text-center mt-10">No system events.</p>
-                    ) : (
-                        [...logs].filter(l => l.category !== 'transcription' && l.category !== 'ai_response').reverse().map(log => (
-                            <div key={log.id} className="text-[11px] font-mono p-2 rounded bg-neutral-950/50 border border-neutral-800/50">
-                                <div className="flex justify-between items-start mb-1 opacity-50 text-neutral-300">
-                                    <span>{log.timestamp}</span>
-                                    <span className="uppercase text-[9px] px-1 rounded bg-neutral-800">{log.category}</span>
+                {activeTab === 'stats' && (
+                    <div className="p-4 bg-neutral-950/50 space-y-4 flex-1 overflow-y-auto">
+                        <div className="space-y-3">
+                            <Label className="text-xs text-neutral-500 uppercase">Diagnostics Fetcher</Label>
+                            <div className="space-y-2">
+                                <Input size={1} placeholder="AI Core URL" className="h-8 text-xs bg-neutral-900 text-neutral-300 border-neutral-800" value={aiCoreUrl} onChange={e => setAiCoreUrl(e.target.value)} />
+                                <Input type="password" size={1} placeholder="API Key" className="h-8 text-xs bg-neutral-900 text-neutral-300 border-neutral-800" value={apiKey} onChange={e => setApiKey(e.target.value)} />
+                                <div className="flex gap-2">
+                                    <Input
+                                        placeholder="Specific Call SID (optional)"
+                                        className="h-8 text-xs bg-neutral-900 text-neutral-300 border-neutral-800"
+                                        value={diagnosticCallSid}
+                                        onChange={e => setDiagnosticCallSid(e.target.value)}
+                                    />
+                                    <Button
+                                        size="sm"
+                                        variant="secondary"
+                                        className="h-8 text-xs whitespace-nowrap bg-neutral-800 text-neutral-200 hover:bg-neutral-700 border border-neutral-700"
+                                        onClick={() => fetchDiagnostics(diagnosticCallSid)}
+                                        disabled={isFetchingDiagnostics}
+                                    >
+                                        {isFetchingDiagnostics ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Activity className="w-3 h-3 mr-1" />} Pull Stats
+                                    </Button>
                                 </div>
-                                <div className={`break-words ${log.type === 'error' ? 'text-red-400' :
-                                        log.type === 'success' ? 'text-emerald-400' :
-                                            log.category === 'diagnostic' ? 'text-blue-400' :
-                                                'text-neutral-300'
-                                    }`}>
-                                    {log.type === 'error' && <AlertCircle className="w-3 h-3 inline mr-1 -mt-0.5" />}
-                                    {log.message}
-                                </div>
-                                {log.details && (
-                                    <pre className="mt-2 p-2 bg-neutral-900 rounded text-[10px] overflow-x-auto text-neutral-400 border border-neutral-800">
-                                        {JSON.stringify(log.details, null, 2)}
-                                    </pre>
-                                )}
                             </div>
-                        ))
-                    )}
-                </div>
+                        </div>
+                    </div>
+                )}
+
+                {activeTab === 'logs' && (
+                    <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                        {logs.filter(l => l.category !== 'transcription' && l.category !== 'ai_response').length === 0 ? (
+                            <p className="text-neutral-600 text-xs text-center mt-10">No system events.</p>
+                        ) : (
+                            [...logs].filter(l => l.category !== 'transcription' && l.category !== 'ai_response').reverse().map(log => (
+                                <div key={log.id} className="text-xs font-mono p-2 rounded bg-neutral-950/50 border border-neutral-800/50">
+                                    <div className="flex justify-between items-start mb-1 opacity-50 text-neutral-300">
+                                        <span>{log.timestamp}</span>
+                                        <span className="uppercase text-[9px] px-1 rounded bg-neutral-800">{log.category}</span>
+                                    </div>
+                                    <div className={`break-words ${log.type === 'error' ? 'text-red-400' :
+                                            log.type === 'success' ? 'text-emerald-400' :
+                                                log.category === 'diagnostic' ? 'text-blue-400' :
+                                                    'text-neutral-300'
+                                        }`}>
+                                        {log.type === 'error' && <AlertCircle className="w-3 h-3 inline mr-1 -mt-0.5" />}
+                                        {log.message}
+                                    </div>
+                                    {log.details && (
+                                        <pre className="mt-2 p-2 bg-neutral-900 rounded text-[10px] overflow-x-auto text-neutral-400 border border-neutral-800">
+                                            {JSON.stringify(log.details, null, 2)}
+                                        </pre>
+                                    )}
+                                </div>
+                            ))
+                        )}
+                    </div>
+                )}
             </div>
         </div>
     )
