@@ -5,13 +5,18 @@ import {Input} from "@/components/ui/input";
 import {Badge} from "@/components/ui/badge";
 import {Button} from "@/components/ui/button";
 import {useCallback, useEffect, useRef, useState} from "react";
+import { Mic, MicOff, Phone, PhoneOff, Loader2, MessageSquare, Activity, Terminal, AlertCircle } from "lucide-react";
 
+type LogCategory = 'system' | 'event' | 'transcription' | 'ai_response' | 'diagnostic' | 'error';
 type LogEntryType = 'info' | 'error' | 'success';
 
 type LogEntry = {
+    id: string;
     timestamp: string;
     message: string;
     type: LogEntryType;
+    category: LogCategory;
+    details?: any;
 }
 
 type MediaMessage = {
@@ -40,6 +45,12 @@ export const MediaPhone = () => {
 
     // Text input for direct AI testing (bypasses STT)
     const [textInput, setTextInput] = useState<string>("");
+
+    // Diagnostics State
+    const [aiCoreUrl, setAiCoreUrl] = useState<string>("http://localhost:8000");
+    const [apiKey, setApiKey] = useState<string>("dev-secret");
+    const [diagnosticCallSid, setDiagnosticCallSid] = useState<string>("");
+    const [isFetchingDiagnostics, setIsFetchingDiagnostics] = useState<boolean>(false);
 
     // Call management
     const isDisconnecting = useRef(false);
@@ -76,12 +87,15 @@ export const MediaPhone = () => {
     /**
      * == UTILITY FUNCTIONS ==
      */
-    const addLog = useCallback((message: string, type: LogEntryType = 'info') => {
+    const addLog = useCallback((message: string, type: LogEntryType = 'info', category: LogCategory = 'system', details?: any) => {
         const timestamp = new Date().toLocaleTimeString();
-        setLogs(prev => [...prev.slice(-49), {
+        setLogs(prev => [...prev.slice(-199), {
+            id: Math.random().toString(36).substring(2, 9),
             timestamp,
             message,
-            type
+            type,
+            category: type === 'error' ? 'error' : category,
+            details
         }]);
     }, []);
 
@@ -92,6 +106,41 @@ export const MediaPhone = () => {
     const generateCallSid = () => {
         return 'CA' + Math.random().toString(36).substring(2, 15);
     }
+
+
+    const fetchDiagnostics = async (sidToFetch?: string) => {
+        const targetSid = sidToFetch || callSidRef.current;
+        if (!targetSid) {
+            addLog('No Call SID available to fetch diagnostics.', 'error', 'error');
+            return;
+        }
+        if (!aiCoreUrl) {
+            addLog('AI Core URL is required to fetch diagnostics.', 'error', 'error');
+            return;
+        }
+        
+        setIsFetchingDiagnostics(true);
+        addLog(`Fetching diagnostics for Call SID: ${targetSid}...`, 'info', 'diagnostic');
+        
+        try {
+            const response = await fetch(`${aiCoreUrl.replace(/\/$/, '')}/api/v1/call/by-call-id/${targetSid}/diagnostics`, {
+                headers: {
+                    'x-internal-api-key': apiKey
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Server returned ${response.status}`);
+            }
+            
+            const data = await response.json();
+            addLog(`Diagnostics retrieved for ${targetSid}`, 'success', 'diagnostic', data);
+        } catch (error: any) {
+            addLog(`Failed to fetch diagnostics: ${error.message}`, 'error', 'error');
+        } finally {
+            setIsFetchingDiagnostics(false);
+        }
+    };
 
     const extractStreamUrlFromTwiml = (twimlXml: string) => {
         try {
@@ -457,7 +506,7 @@ export const MediaPhone = () => {
                     break;
 
                 case 'transcription':
-                    addLog(`📝 STT: "${message.text}" (${message.language}, conf: ${message.confidence})`, 'success');
+                    addLog(`📝 STT: "${message.text}" (${message.language}, conf: ${message.confidence})`, 'success', 'transcription');
                     break;
 
                 case 'processing':
@@ -469,7 +518,8 @@ export const MediaPhone = () => {
                         message.internal_session_id
                             ? `🤖 AI: "${message.text}" (session: ${message.internal_session_id})`
                             : `🤖 AI: "${message.text}"`,
-                        'info'
+                        'info',
+                        'ai_response'
                     );
                     break;
 
@@ -660,94 +710,209 @@ export const MediaPhone = () => {
     }, []);
 
     return (
-        <>
-            <div className="bg-gray-100 p-4 rounded">
-                <div className="flex flex-col gap-2">
-                    <Label>Connection url</Label>
-                    <Input type="text" className="bg-white" placeholder="https://voice-agent.anas31.qzz.io/voice/acme-corp" value={url}
-                           onChange={(e) => setUrl(e.target.value)}/>
-                </div>
-                <div className="flex flex-col gap-2 mt-4">
-                    <Label>Active Department (optional)</Label>
-                    <Input type="text" className="bg-white" placeholder="housekeeping" value={activeDepartment}
-                           onChange={(e) => setActiveDepartment(e.target.value)}/>
-                </div>
-            </div>
-            <div className="bg-gray-50 flex flex-row items-center p-4 rounded mt-4 gap-2">
-                <Label>Status:</Label>
-                <Badge
-                    variant={isConnected ? 'default' : 'secondary'}>{isConnected ? 'Connected' : 'Disconnected'}</Badge>
-            </div>
-            <div className="bg-gray-50 flex flex-row items-center p-4 rounded mt-4 gap-2">
-                <Button onClick={() => _connectToCall()}>Connect to call</Button>
-                <Button variant="secondary" onClick={() => _disconnectFromCall()}>Disconnect</Button>
-                <Button
-                    variant="outline"
-                    className={isMicEnabled
-                        ? "bg-green-500 hover:bg-green-600 text-white border-0 min-w-24"
-                        : "bg-red-500 hover:bg-red-600 text-white border-0 min-w-24"
-                    }
-                    disabled={isServerMicLocked}
-                    onClick={() => {
-                        const next = !isMicEnabled;
-                        isMicEnabledRef.current = next;
-                        setIsMicEnabled(next);
-                        addLog(next ? '🎤 Mic ON' : '🔇 Mic OFF', 'info');
-                    }}
-                >
-                    {isServerMicLocked ? "⏳ Processing" : isMicEnabled ? "🎤 Mic ON" : "🎤 Mic OFF"}
-                </Button>
-            </div>
-            {isServerMicLocked && (
-                <div className="bg-amber-50 border border-amber-200 text-amber-900 p-3 rounded mt-4 text-sm">
-                    Previous command is processing. Mic is temporarily disabled.
-                </div>
-            )}
-            <div className="bg-gray-50 flex flex-row items-center p-4 rounded mt-4 gap-2">
-                <Input
-                    type="text"
-                    className="bg-white flex-1"
-                    placeholder="Type a message to send to AI (skips STT)..."
-                    value={textInput}
-                    onChange={(e) => setTextInput(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && _sendText()}
-                    disabled={isServerMicLocked}
-                />
-                <Button
-                    variant="outline"
-                    onClick={_sendText}
-                    disabled={!isConnected || isServerMicLocked}
-                >
-                    ⌨️ Send
-                </Button>
-            </div>
-
-            <div className="bg-white border-1 border-gray-200 rounded mt-4">
-                <div className="p-4 border-b border-gray-200">
-                    <span className="text-sm font-bold">Logs</span>
-                </div>
-                <div className="p-4 text-sm">
-                    <div className="p-4 max-h-64 overflow-y-auto">
-                        {logs.length === 0 ? (
-                            <p className="text-gray-500 text-sm">No logs yet...</p>
+        <div className="flex h-[calc(100vh-4rem)] max-h-screen bg-neutral-950 text-neutral-50 font-sans overflow-hidden">
+            {/* MAIN COLUMN: Chat Interface */}
+            <div className="flex-1 flex flex-col border-r border-neutral-800 relative">
+                {/* Header */}
+                <div className="flex items-center justify-between p-4 border-b border-neutral-800 bg-neutral-900/50 backdrop-blur-md">
+                    <div className="flex items-center gap-3">
+                        <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-red-500'}`} />
+                        <h1 className="font-semibold text-lg tracking-tight">Voice Agent interaction</h1>
+                        <Badge variant="outline" className="ml-2 border-neutral-700 text-neutral-400">
+                            {isConnected ? 'Connected' : 'Disconnected'}
+                        </Badge>
+                    </div>
+                    
+                    <div className="flex items-center gap-2">
+                        {!isConnected ? (
+                            <Button onClick={_connectToCall} className="bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow-[0_0_15px_rgba(5,150,105,0.3)]">
+                                <Phone className="w-4 h-4 mr-2" /> Connect
+                            </Button>
                         ) : (
-                            <div className="space-y-1">
-                                {logs.map((log, index) => (
-                                    <div key={index} className="text-sm font-mono">
-                                        <span className="text-gray-500">{log.timestamp}</span>
-                                        <span className={`ml-2 ${log.type === 'error' ? 'text-red-600' :
-                                            log.type === 'success' ? 'text-green-600' :
-                                                'text-gray-800'
-                                        }`}>
-                                            {log.message}
-                                        </span>
-                                    </div>
-                                ))}
-                            </div>
+                            <Button onClick={_disconnectFromCall} variant="destructive" className="bg-red-600 hover:bg-red-500">
+                                <PhoneOff className="w-4 h-4 mr-2" /> Disconnect
+                            </Button>
                         )}
                     </div>
                 </div>
+
+                {/* Connection Settings */}
+                {!isConnected && (
+                    <div className="p-4 bg-neutral-900 border-b border-neutral-800 grid grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                            <Label className="text-neutral-400 text-xs uppercase tracking-wider">Voice Server URL</Label>
+                            <Input 
+                                className="bg-neutral-950 border-neutral-800 focus:border-neutral-600 focus:ring-neutral-600 text-neutral-200" 
+                                value={url} onChange={(e) => setUrl(e.target.value)} 
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <Label className="text-neutral-400 text-xs uppercase tracking-wider">Department</Label>
+                            <Input 
+                                className="bg-neutral-950 border-neutral-800 focus:border-neutral-600 focus:ring-neutral-600 text-neutral-200" 
+                                placeholder="optional" 
+                                value={activeDepartment} onChange={(e) => setActiveDepartment(e.target.value)} 
+                            />
+                        </div>
+                    </div>
+                )}
+
+                {/* Chat Area */}
+                <div className="flex-1 overflow-y-auto p-6 space-y-6 scroll-smooth">
+                    {logs.filter(l => l.category === 'transcription' || l.category === 'ai_response').length === 0 ? (
+                        <div className="h-full flex flex-col items-center justify-center text-neutral-600 gap-4">
+                            <MessageSquare className="w-12 h-12 opacity-20" />
+                            <p className="text-sm uppercase tracking-widest opacity-50">No conversation yet</p>
+                        </div>
+                    ) : (
+                        logs.filter(l => l.category === 'transcription' || l.category === 'ai_response').map(log => (
+                            <div key={log.id} className={`flex w-full ${log.category === 'transcription' ? 'justify-end' : 'justify-start'}`}>
+                                <div className={`max-w-[80%] rounded-2xl p-4 ${log.category === 'transcription' 
+                                    ? 'bg-emerald-900/40 text-emerald-100 border border-emerald-800/50 rounded-tr-sm' 
+                                    : 'bg-neutral-800 border border-neutral-700 text-neutral-200 rounded-tl-sm'}`}>
+                                    <div className="flex items-center gap-2 mb-1 opacity-60 text-xs">
+                                        <span>{log.category === 'transcription' ? 'You' : 'AI Agent'}</span>
+                                        <span className="text-[10px]">{log.timestamp}</span>
+                                    </div>
+                                    <div className="text-[15px] leading-relaxed">
+                                        {log.message.replace(/^(📝 STT: |🤖 AI: )/, '').replace(/^"(.*)"$/, '$1').replace(/" \(.*/, '"')}
+                                    </div>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+
+                {/* Control Bar */}
+                <div className="p-4 border-t border-neutral-800 bg-neutral-900/80 backdrop-blur-md">
+                    <div className="flex items-center gap-4">
+                        <Button
+                            variant="outline"
+                            size="lg"
+                            className={`relative overflow-hidden group transition-all duration-300 ${
+                                isServerMicLocked ? 'bg-amber-900/20 border-amber-800/50 text-amber-500' :
+                                isMicEnabled 
+                                    ? 'bg-emerald-600/20 border-emerald-500/50 text-emerald-400 hover:bg-emerald-600/30' 
+                                    : 'bg-neutral-800 border-neutral-700 hover:bg-neutral-700 text-neutral-400'
+                            }`}
+                            disabled={isServerMicLocked || !isConnected}
+                            onClick={() => {
+                                const next = !isMicEnabled;
+                                isMicEnabledRef.current = next;
+                                setIsMicEnabled(next);
+                                addLog(next ? 'Mic ON' : 'Mic OFF', 'info', 'system');
+                            }}
+                        >
+                            {isServerMicLocked ? (
+                                <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> Processing</>
+                            ) : isMicEnabled ? (
+                                <>
+                                    <span className="absolute inset-0 bg-emerald-500/20 animate-pulse" />
+                                    <Mic className="w-5 h-5 mr-2 relative z-10" /> 
+                                    <span className="relative z-10">Listening...</span>
+                                    {/* Mic Waves */}
+                                    <div className="ml-3 flex items-center gap-[2px] relative z-10">
+                                        <div className="w-1 h-3 bg-emerald-400 rounded-full animate-[bounce_1s_infinite_100ms]"></div>
+                                        <div className="w-1 h-5 bg-emerald-400 rounded-full animate-[bounce_1s_infinite_200ms]"></div>
+                                        <div className="w-1 h-2 bg-emerald-400 rounded-full animate-[bounce_1s_infinite_300ms]"></div>
+                                        <div className="w-1 h-4 bg-emerald-400 rounded-full animate-[bounce_1s_infinite_400ms]"></div>
+                                    </div>
+                                </>
+                            ) : (
+                                <><MicOff className="w-5 h-5 mr-2" /> Mic Off</>
+                            )}
+                        </Button>
+
+                        <div className="flex-1 relative">
+                            <Input
+                                type="text"
+                                className="w-full bg-neutral-950 text-neutral-200 border-neutral-700 focus:border-neutral-500 pr-20 h-12"
+                                placeholder="Type a message (bypasses STT)..."
+                                value={textInput}
+                                onChange={(e) => setTextInput(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && _sendText()}
+                                disabled={isServerMicLocked || !isConnected}
+                            />
+                            <Button 
+                                size="sm" 
+                                className="absolute right-1 top-1 h-10 px-4 bg-neutral-800 text-neutral-200 hover:bg-neutral-700"
+                                onClick={_sendText}
+                                disabled={!isConnected || isServerMicLocked || !textInput.trim()}
+                            >
+                                Send
+                            </Button>
+                        </div>
+                    </div>
+                </div>
             </div>
-        </>
+
+            {/* SIDE PANEL: Technical Logs */}
+            <div className="w-96 flex flex-col bg-neutral-900 border-l border-neutral-800">
+                <div className="p-4 border-b border-neutral-800">
+                    <h2 className="font-semibold text-neutral-200 flex items-center gap-2">
+                        <Terminal className="w-4 h-4" /> System & Diagnostics
+                    </h2>
+                </div>
+
+                <div className="p-4 border-b border-neutral-800 bg-neutral-950/50 space-y-3">
+                    <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                            <Label className="text-[10px] text-neutral-500 uppercase">AI Core URL</Label>
+                            <Input size={1} className="h-7 text-xs bg-neutral-900 text-neutral-300 border-neutral-800" value={aiCoreUrl} onChange={e => setAiCoreUrl(e.target.value)} />
+                        </div>
+                        <div className="space-y-1">
+                            <Label className="text-[10px] text-neutral-500 uppercase">API Key</Label>
+                            <Input type="password" size={1} className="h-7 text-xs bg-neutral-900 text-neutral-300 border-neutral-800" value={apiKey} onChange={e => setApiKey(e.target.value)} />
+                        </div>
+                    </div>
+                    <div className="flex gap-2">
+                        <Input 
+                            placeholder="Specific Call SID (optional)" 
+                            className="h-8 text-xs bg-neutral-900 text-neutral-300 border-neutral-800"
+                            value={diagnosticCallSid}
+                            onChange={e => setDiagnosticCallSid(e.target.value)}
+                        />
+                        <Button 
+                            size="sm" 
+                            variant="secondary" 
+                            className="h-8 text-xs whitespace-nowrap bg-neutral-800 text-neutral-200 hover:bg-neutral-700 border border-neutral-700"
+                            onClick={() => fetchDiagnostics(diagnosticCallSid)}
+                            disabled={isFetchingDiagnostics}
+                        >
+                            {isFetchingDiagnostics ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Activity className="w-3 h-3 mr-1" />} Pull Stats
+                        </Button>
+                    </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                    {logs.filter(l => l.category !== 'transcription' && l.category !== 'ai_response').length === 0 ? (
+                        <p className="text-neutral-600 text-xs text-center mt-10">No system events.</p>
+                    ) : (
+                        [...logs].filter(l => l.category !== 'transcription' && l.category !== 'ai_response').reverse().map(log => (
+                            <div key={log.id} className="text-[11px] font-mono p-2 rounded bg-neutral-950/50 border border-neutral-800/50">
+                                <div className="flex justify-between items-start mb-1 opacity-50 text-neutral-300">
+                                    <span>{log.timestamp}</span>
+                                    <span className="uppercase text-[9px] px-1 rounded bg-neutral-800">{log.category}</span>
+                                </div>
+                                <div className={`break-words ${
+                                    log.type === 'error' ? 'text-red-400' :
+                                    log.type === 'success' ? 'text-emerald-400' :
+                                    log.category === 'diagnostic' ? 'text-blue-400' :
+                                    'text-neutral-300'
+                                }`}>
+                                    {log.type === 'error' && <AlertCircle className="w-3 h-3 inline mr-1 -mt-0.5" />}
+                                    {log.message}
+                                </div>
+                                {log.details && (
+                                    <pre className="mt-2 p-2 bg-neutral-900 rounded text-[10px] overflow-x-auto text-neutral-400 border border-neutral-800">
+                                        {JSON.stringify(log.details, null, 2)}
+                                    </pre>
+                                )}
+                            </div>
+                        ))
+                    )}
+                </div>
+            </div>
+        </div>
     )
 }
