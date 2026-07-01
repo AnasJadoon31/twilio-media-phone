@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Mic, MicOff, Phone, PhoneOff, Loader2, MessageSquare, Activity, Terminal, AlertCircle } from "lucide-react";
+import { Mic, MicOff, Phone, PhoneOff, Loader2, MessageSquare, Activity, Terminal, AlertCircle, PanelRight } from "lucide-react";
 
 type LogCategory = 'system' | 'event' | 'transcription' | 'ai_response' | 'diagnostic' | 'error';
 type LogEntryType = 'info' | 'error' | 'success';
@@ -73,6 +73,7 @@ export const MediaPhone = () => {
     const [activeTab, setActiveTab] = useState<'logs' | 'stats'>('logs');
     const lastSttTimestampRef = useRef<number | null>(null);
     const [panelWidth, setPanelWidth] = useState(450);
+    const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
 
     // Diagnostics State
     const [aiCoreUrl, setAiCoreUrl] = useState<string>(process.env.NEXT_PUBLIC_AI_CORE_URL || "https://api.operaios.qzz.io");
@@ -777,6 +778,9 @@ export const MediaPhone = () => {
                     </div>
 
                     <div className="flex items-center gap-2">
+                        <Button variant="ghost" size="icon" onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="text-neutral-400 hover:text-neutral-200" title="Toggle Sidebar">
+                            <PanelRight className="w-5 h-5" />
+                        </Button>
                         {!isConnected ? (
                             <Button onClick={_connectToCall} className="bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow-[0_0_15px_rgba(5,150,105,0.3)]">
                                 <Phone className="w-4 h-4 mr-2" /> Connect
@@ -921,9 +925,10 @@ export const MediaPhone = () => {
             </div>
 
             {/* Resizer */}
-            <div 
-                className="w-1 bg-neutral-800 hover:bg-neutral-600 cursor-col-resize active:bg-emerald-500 transition-colors z-50 flex-shrink-0"
-                onMouseDown={(e) => {
+            {isSidebarOpen && (
+                <div 
+                    className="w-1 bg-neutral-800 hover:bg-neutral-600 cursor-col-resize active:bg-emerald-500 transition-colors z-50 flex-shrink-0"
+                    onMouseDown={(e) => {
                     const startX = e.clientX;
                     const startWidth = panelWidth;
                     
@@ -942,10 +947,12 @@ export const MediaPhone = () => {
                     document.addEventListener('mousemove', onMouseMove);
                     document.addEventListener('mouseup', onMouseUp);
                 }}
-            />
+                />
+            )}
 
             {/* SIDE PANEL: Technical Logs & Stats */}
-            <div style={{ width: panelWidth }} className="flex flex-col bg-neutral-900 border-l border-neutral-800 flex-shrink-0 relative">
+            {isSidebarOpen && (
+                <div style={{ width: panelWidth }} className="flex flex-col bg-neutral-900 border-l border-neutral-800 flex-shrink-0 relative">
                 <div className="flex border-b border-neutral-800">
                     <button 
                         onClick={() => setActiveTab('logs')}
@@ -1036,7 +1043,8 @@ export const MediaPhone = () => {
                         )}
                     </div>
                 )}
-            </div>
+                </div>
+            )}
         </div>
     )
 }
