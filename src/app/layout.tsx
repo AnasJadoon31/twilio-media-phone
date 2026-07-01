@@ -19,10 +19,7 @@ export default function RootLayout({
         data-theme="forge"
         data-typography
       >
-        <Header />
-        <div className="mx-auto max-w-screen-md mt-6">
-            {children}
-        </div>
+        {children}
       </body>
     </html>
   );
