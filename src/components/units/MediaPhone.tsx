@@ -1,10 +1,10 @@
 "use client"
 
-import {Label} from "@/components/ui/label";
-import {Input} from "@/components/ui/input";
-import {Badge} from "@/components/ui/badge";
-import {Button} from "@/components/ui/button";
-import {useCallback, useEffect, useRef, useState} from "react";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Mic, MicOff, Phone, PhoneOff, Loader2, MessageSquare, Activity, Terminal, AlertCircle } from "lucide-react";
 
 type LogCategory = 'system' | 'event' | 'transcription' | 'ai_response' | 'diagnostic' | 'error';
@@ -54,10 +54,10 @@ export const MediaPhone = () => {
 
     // Call management
     const isDisconnecting = useRef(false);
-    const wsRef = useRef<WebSocket|null>(null);
+    const wsRef = useRef<WebSocket | null>(null);
     const audioContextRef = useRef<AudioContext | null>(null);
-    const streamSidRef = useRef<string|null>(null);
-    const callSidRef = useRef<string|null>(null);
+    const streamSidRef = useRef<string | null>(null);
+    const callSidRef = useRef<string | null>(null);
 
     // Audio processing refs
     // Output
@@ -66,11 +66,11 @@ export const MediaPhone = () => {
     // Input
     const nextStartTimeRef = useRef<number>(0);
     const audioBufferQueueRef = useRef<QueuedAudioItem[]>([]);
-    const muLawDecodeTable = useRef<Int16Array|null>(null);
+    const muLawDecodeTable = useRef<Int16Array | null>(null);
     const pendingMarksRef = useRef<Set<string>>(new Set());
-    const currentSourceRef = useRef<AudioBufferSourceNode|null>(null);
-    const pendingMarkFromServerRef = useRef<string|null>(null);
-    const ulawDecoderNodeRef = useRef<AudioWorkletNode|null>(null);
+    const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
+    const pendingMarkFromServerRef = useRef<string | null>(null);
+    const ulawDecoderNodeRef = useRef<AudioWorkletNode | null>(null);
     const [isPlaying, setIsPlaying] = useState<boolean>(false);
 
     // Defense-in-depth: mute outgoing mic data while AI audio is playing.
@@ -118,21 +118,21 @@ export const MediaPhone = () => {
             addLog('AI Core URL is required to fetch diagnostics.', 'error', 'error');
             return;
         }
-        
+
         setIsFetchingDiagnostics(true);
         addLog(`Fetching diagnostics for Call SID: ${targetSid}...`, 'info', 'diagnostic');
-        
+
         try {
-            const response = await fetch(`${aiCoreUrl.replace(/\/$/, '')}/api/v1/call/by-call-id/${targetSid}/diagnostics`, {
+            const response = await fetch(`${aiCoreUrl.replace(/\/$/, '')}/api/v1/call/${targetSid}/diagnostics`, {
                 headers: {
                     'x-internal-api-key': apiKey
                 }
             });
-            
+
             if (!response.ok) {
                 throw new Error(`Server returned ${response.status}`);
             }
-            
+
             const data = await response.json();
             addLog(`Diagnostics retrieved for ${targetSid}`, 'success', 'diagnostic', data);
         } catch (error: any) {
@@ -216,11 +216,11 @@ export const MediaPhone = () => {
     const processMediaMessage = (message: MediaMessage) => {
         try {
             const muLawData = base64ToUint8Array(message.media.payload);
-            
+
             if (ulawDecoderNodeRef.current) {
                 const markName = pendingMarkFromServerRef.current;
                 pendingMarkFromServerRef.current = null;
-                
+
                 // Send to decoder processor node
                 ulawDecoderNodeRef.current.port.postMessage({
                     type: 'decode',
@@ -254,7 +254,7 @@ export const MediaPhone = () => {
                 }
             });
 
-            audioContextRef.current = new AudioContext({sampleRate: 8000});
+            audioContextRef.current = new AudioContext({ sampleRate: 8000 });
 
             if (audioContextRef.current.state === 'suspended') {
                 await audioContextRef.current.resume();
@@ -302,14 +302,14 @@ export const MediaPhone = () => {
                 outputChannelCount: [1]
             });
             ulawDecoderNodeRef.current = decoderWorkletNode;
-            
+
             // Connect the decoder directly to the audio output
             decoderWorkletNode.connect(audioContextRef.current.destination);
-            
+
             decoderWorkletNode.port.onmessage = (event: MessageEvent) => {
                 if (event.data.type === 'bufferProcessed') {
                     const { markName } = event.data;
-                    
+
                     if (markName) {
                         _sendMessageToClient(
                             'mark',
@@ -339,7 +339,7 @@ export const MediaPhone = () => {
                     addLog('Audio worklet buffers cleared', 'info');
                 }
             };
-            
+
             // Connect encoder to worklet ONLY (do NOT route mic to speakers).
             // The AI audio is played separately through ulawDecoderNode → destination.
             // Routing mic to speakers creates a local feedback loop (echo).
@@ -470,7 +470,7 @@ export const MediaPhone = () => {
     const _handleWebSocketMessage = useCallback((event: MessageEvent) => {
         try {
             const message = JSON.parse(event.data);
-            
+
             if (message.event !== 'media') {
                 addLog(`Received ${message.event}: ${JSON.stringify(message)}`, 'info');
             }
@@ -664,7 +664,7 @@ export const MediaPhone = () => {
         }
 
         ulawDecoderNodeRef.current = null;
-        
+
         if (audioContextRef.current) {
             try {
                 audioContextRef.current.close();
@@ -722,7 +722,7 @@ export const MediaPhone = () => {
                             {isConnected ? 'Connected' : 'Disconnected'}
                         </Badge>
                     </div>
-                    
+
                     <div className="flex items-center gap-2">
                         {!isConnected ? (
                             <Button onClick={_connectToCall} className="bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow-[0_0_15px_rgba(5,150,105,0.3)]">
@@ -741,17 +741,17 @@ export const MediaPhone = () => {
                     <div className="p-4 bg-neutral-900 border-b border-neutral-800 grid grid-cols-2 gap-4">
                         <div className="space-y-1">
                             <Label className="text-neutral-400 text-xs uppercase tracking-wider">Voice Server URL</Label>
-                            <Input 
-                                className="bg-neutral-950 border-neutral-800 focus:border-neutral-600 focus:ring-neutral-600 text-neutral-200" 
-                                value={url} onChange={(e) => setUrl(e.target.value)} 
+                            <Input
+                                className="bg-neutral-950 border-neutral-800 focus:border-neutral-600 focus:ring-neutral-600 text-neutral-200"
+                                value={url} onChange={(e) => setUrl(e.target.value)}
                             />
                         </div>
                         <div className="space-y-1">
                             <Label className="text-neutral-400 text-xs uppercase tracking-wider">Department</Label>
-                            <Input 
-                                className="bg-neutral-950 border-neutral-800 focus:border-neutral-600 focus:ring-neutral-600 text-neutral-200" 
-                                placeholder="optional" 
-                                value={activeDepartment} onChange={(e) => setActiveDepartment(e.target.value)} 
+                            <Input
+                                className="bg-neutral-950 border-neutral-800 focus:border-neutral-600 focus:ring-neutral-600 text-neutral-200"
+                                placeholder="optional"
+                                value={activeDepartment} onChange={(e) => setActiveDepartment(e.target.value)}
                             />
                         </div>
                     </div>
@@ -767,8 +767,8 @@ export const MediaPhone = () => {
                     ) : (
                         logs.filter(l => l.category === 'transcription' || l.category === 'ai_response').map(log => (
                             <div key={log.id} className={`flex w-full ${log.category === 'transcription' ? 'justify-end' : 'justify-start'}`}>
-                                <div className={`max-w-[80%] rounded-2xl p-4 ${log.category === 'transcription' 
-                                    ? 'bg-emerald-900/40 text-emerald-100 border border-emerald-800/50 rounded-tr-sm' 
+                                <div className={`max-w-[80%] rounded-2xl p-4 ${log.category === 'transcription'
+                                    ? 'bg-emerald-900/40 text-emerald-100 border border-emerald-800/50 rounded-tr-sm'
                                     : 'bg-neutral-800 border border-neutral-700 text-neutral-200 rounded-tl-sm'}`}>
                                     <div className="flex items-center gap-2 mb-1 opacity-60 text-xs">
                                         <span>{log.category === 'transcription' ? 'You' : 'AI Agent'}</span>
@@ -789,12 +789,11 @@ export const MediaPhone = () => {
                         <Button
                             variant="outline"
                             size="lg"
-                            className={`relative overflow-hidden group transition-all duration-300 ${
-                                isServerMicLocked ? 'bg-amber-900/20 border-amber-800/50 text-amber-500' :
-                                isMicEnabled 
-                                    ? 'bg-emerald-600/20 border-emerald-500/50 text-emerald-400 hover:bg-emerald-600/30' 
-                                    : 'bg-neutral-800 border-neutral-700 hover:bg-neutral-700 text-neutral-400'
-                            }`}
+                            className={`relative overflow-hidden group transition-all duration-300 ${isServerMicLocked ? 'bg-amber-900/20 border-amber-800/50 text-amber-500' :
+                                    isMicEnabled
+                                        ? 'bg-emerald-600/20 border-emerald-500/50 text-emerald-400 hover:bg-emerald-600/30'
+                                        : 'bg-neutral-800 border-neutral-700 hover:bg-neutral-700 text-neutral-400'
+                                }`}
                             disabled={isServerMicLocked || !isConnected}
                             onClick={() => {
                                 const next = !isMicEnabled;
@@ -808,7 +807,7 @@ export const MediaPhone = () => {
                             ) : isMicEnabled ? (
                                 <>
                                     <span className="absolute inset-0 bg-emerald-500/20 animate-pulse" />
-                                    <Mic className="w-5 h-5 mr-2 relative z-10" /> 
+                                    <Mic className="w-5 h-5 mr-2 relative z-10" />
                                     <span className="relative z-10">Listening...</span>
                                     {/* Mic Waves */}
                                     <div className="ml-3 flex items-center gap-[2px] relative z-10">
@@ -833,8 +832,8 @@ export const MediaPhone = () => {
                                 onKeyDown={(e) => e.key === 'Enter' && _sendText()}
                                 disabled={isServerMicLocked || !isConnected}
                             />
-                            <Button 
-                                size="sm" 
+                            <Button
+                                size="sm"
                                 className="absolute right-1 top-1 h-10 px-4 bg-neutral-800 text-neutral-200 hover:bg-neutral-700"
                                 onClick={_sendText}
                                 disabled={!isConnected || isServerMicLocked || !textInput.trim()}
@@ -866,15 +865,15 @@ export const MediaPhone = () => {
                         </div>
                     </div>
                     <div className="flex gap-2">
-                        <Input 
-                            placeholder="Specific Call SID (optional)" 
+                        <Input
+                            placeholder="Specific Call SID (optional)"
                             className="h-8 text-xs bg-neutral-900 text-neutral-300 border-neutral-800"
                             value={diagnosticCallSid}
                             onChange={e => setDiagnosticCallSid(e.target.value)}
                         />
-                        <Button 
-                            size="sm" 
-                            variant="secondary" 
+                        <Button
+                            size="sm"
+                            variant="secondary"
                             className="h-8 text-xs whitespace-nowrap bg-neutral-800 text-neutral-200 hover:bg-neutral-700 border border-neutral-700"
                             onClick={() => fetchDiagnostics(diagnosticCallSid)}
                             disabled={isFetchingDiagnostics}
@@ -894,12 +893,11 @@ export const MediaPhone = () => {
                                     <span>{log.timestamp}</span>
                                     <span className="uppercase text-[9px] px-1 rounded bg-neutral-800">{log.category}</span>
                                 </div>
-                                <div className={`break-words ${
-                                    log.type === 'error' ? 'text-red-400' :
-                                    log.type === 'success' ? 'text-emerald-400' :
-                                    log.category === 'diagnostic' ? 'text-blue-400' :
-                                    'text-neutral-300'
-                                }`}>
+                                <div className={`break-words ${log.type === 'error' ? 'text-red-400' :
+                                        log.type === 'success' ? 'text-emerald-400' :
+                                            log.category === 'diagnostic' ? 'text-blue-400' :
+                                                'text-neutral-300'
+                                    }`}>
                                     {log.type === 'error' && <AlertCircle className="w-3 h-3 inline mr-1 -mt-0.5" />}
                                     {log.message}
                                 </div>
