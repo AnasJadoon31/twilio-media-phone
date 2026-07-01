@@ -5,7 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Mic, MicOff, Phone, PhoneOff, Loader2, MessageSquare, Activity, Terminal, AlertCircle, PanelRight } from "lucide-react";
+import { Mic, MicOff, Phone, PhoneOff, Loader2, MessageSquare, Activity, Terminal, AlertCircle, PanelRight, FileText } from "lucide-react";
+import { DiagnosticsDashboard } from "./DiagnosticsDashboard";
 
 type LogCategory = 'system' | 'event' | 'transcription' | 'ai_response' | 'diagnostic' | 'error';
 type LogEntryType = 'info' | 'error' | 'success';
@@ -80,6 +81,15 @@ export const MediaPhone = () => {
     const [apiKey, setApiKey] = useState<string>("dev-secret");
     const [diagnosticCallSid, setDiagnosticCallSid] = useState<string>("");
     const [isFetchingDiagnostics, setIsFetchingDiagnostics] = useState<boolean>(false);
+    const [showDiagnosticsPage, setShowDiagnosticsPage] = useState<boolean>(false);
+
+    const handleOpenDiagnostics = async () => {
+        const hasDiagnostics = logs.some(l => l.category === 'diagnostic');
+        if (!hasDiagnostics && callSidRef.current) {
+            await fetchDiagnostics(callSidRef.current);
+        }
+        setShowDiagnosticsPage(true);
+    };
 
     // Call management
     const isDisconnecting = useRef(false);
@@ -778,6 +788,9 @@ export const MediaPhone = () => {
                     </div>
 
                     <div className="flex items-center gap-2">
+                        <Button onClick={handleOpenDiagnostics} variant="outline" className="border-blue-800 text-blue-400 hover:bg-blue-900/30 hover:text-blue-300 transition-colors">
+                            <FileText className="w-4 h-4 mr-2" /> Diagnostics
+                        </Button>
                         <Button variant="ghost" size="icon" onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="text-neutral-400 hover:text-neutral-200" title="Toggle Sidebar">
                             <PanelRight className="w-5 h-5" />
                         </Button>
@@ -1044,6 +1057,13 @@ export const MediaPhone = () => {
                     </div>
                 )}
                 </div>
+            )}
+
+            {showDiagnosticsPage && (
+                <DiagnosticsDashboard 
+                    data={[...logs].reverse().find(l => l.category === 'diagnostic')?.details || null}
+                    onClose={() => setShowDiagnosticsPage(false)} 
+                />
             )}
         </div>
     )
