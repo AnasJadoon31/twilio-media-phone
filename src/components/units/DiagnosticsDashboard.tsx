@@ -17,15 +17,20 @@ export const DiagnosticsDashboard = ({ data, onClose, aiCoreUrl, apiKey, onFetch
     
     // Always render the dashboard framework so the user can use the search bar
     const {
-        session_summary = {},
-        routing_metrics = {},
-        latest_turn_diagnostic = {},
-        turn_diagnostics = [],
+        session_summary: _session_summary,
+        routing_metrics: _routing_metrics,
+        latest_turn_diagnostic: _latest_turn_diagnostic,
+        turn_diagnostics: _turn_diagnostics,
         call_id,
         session_id,
         confirmed_language,
         state
     } = data || {};
+
+    const session_summary = _session_summary || {};
+    const routing_metrics = _routing_metrics || {};
+    const latest_turn_diagnostic = _latest_turn_diagnostic || {};
+    const turn_diagnostics = _turn_diagnostics || [];
 
     const avgLatency = session_summary.average_latency_ms || 0;
     const latencyColor = avgLatency < 1000 ? "text-emerald-400" : avgLatency < 3000 ? "text-amber-400" : "text-red-400";
