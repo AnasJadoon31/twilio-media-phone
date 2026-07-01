@@ -738,7 +738,8 @@ export const MediaPhone = () => {
         if (!trimmed || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
 
         _sendMessageToClient('text', { text: trimmed });
-        addLog(`⌨️ Sent: "${trimmed}"`, 'info');
+        lastSttTimestampRef.current = Date.now();
+        addLog(`📝 STT: "${trimmed}" (text, conf: 1.0)`, 'success', 'transcription', undefined, trimmed);
         setTextInput('');
     }
 
@@ -990,14 +991,14 @@ export const MediaPhone = () => {
                         {/* Render Diagnostic Logs Here */}
                         <div className="space-y-2 mt-4">
                             {logs.filter(l => l.category === 'diagnostic').reverse().map(log => (
-                                <div key={log.id} className="text-xs font-mono p-3 rounded-lg bg-neutral-900 border border-neutral-700 shadow-sm">
+                                <div key={log.id} className="text-sm font-mono p-3 rounded-lg bg-neutral-900 border border-neutral-700 shadow-sm">
                                     <div className="flex justify-between items-start mb-2 opacity-70 text-neutral-300">
                                         <span>{log.timestamp}</span>
                                         <span className="uppercase text-[9px] px-1 rounded bg-blue-900/50 text-blue-300 border border-blue-800/50">Diagnostic</span>
                                     </div>
-                                    <div className="text-blue-300 font-semibold mb-2">{log.message}</div>
+                                    <div className="text-blue-300 font-semibold mb-2 text-base">{log.message}</div>
                                     {log.details && (
-                                        <pre className="mt-2 p-3 bg-neutral-950 rounded text-[10px] overflow-x-auto text-neutral-300 border border-neutral-800">
+                                        <pre className="mt-2 p-3 bg-neutral-950 rounded text-xs overflow-x-auto text-neutral-300 border border-neutral-800">
                                             {JSON.stringify(log.details, null, 2)}
                                         </pre>
                                     )}
