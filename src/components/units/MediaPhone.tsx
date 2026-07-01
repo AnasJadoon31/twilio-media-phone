@@ -19,6 +19,7 @@ type LogEntry = {
     details?: any;
     totalLatencyMs?: number;
     backendLatencyMs?: number;
+    rawText?: string;
 }
 
 type MediaMessage = {
@@ -71,6 +72,7 @@ export const MediaPhone = () => {
 
     const [activeTab, setActiveTab] = useState<'logs' | 'stats'>('logs');
     const lastSttTimestampRef = useRef<number | null>(null);
+    const [panelWidth, setPanelWidth] = useState(450);
 
     // Diagnostics State
     const [aiCoreUrl, setAiCoreUrl] = useState<string>(process.env.NEXT_PUBLIC_AI_CORE_URL || "https://api.operaios.qzz.io");
@@ -113,7 +115,7 @@ export const MediaPhone = () => {
     /**
      * == UTILITY FUNCTIONS ==
      */
-    const addLog = useCallback((message: string, type: LogEntryType = 'info', category: LogCategory = 'system', details?: any) => {
+    const addLog = useCallback((message: string, type: LogEntryType = 'info', category: LogCategory = 'system', details?: any, rawText?: string) => {
         const timestamp = new Date().toLocaleTimeString();
         setLogs(prev => [...prev.slice(-199), {
             id: Math.random().toString(36).substring(2, 9),
@@ -121,7 +123,8 @@ export const MediaPhone = () => {
             message,
             type,
             category: type === 'error' ? 'error' : category,
-            details
+            details,
+            rawText
         }]);
     }, []);
 
@@ -533,7 +536,7 @@ export const MediaPhone = () => {
 
                 case 'transcription':
                     lastSttTimestampRef.current = Date.now();
-                    addLog(`📝 STT: "${message.text}" (${message.language}, conf: ${message.confidence})`, 'success', 'transcription');
+                    addLog(`📝 STT: "${message.text}" (${message.language}, conf: ${message.confidence})`, 'success', 'transcription', undefined, message.text);
                     break;
 
                 case 'processing':
@@ -558,7 +561,8 @@ export const MediaPhone = () => {
                         type: 'info',
                         category: 'ai_response',
                         totalLatencyMs: totalLatency,
-                        backendLatencyMs: backendLatency
+                        backendLatencyMs: backendLatency,
+                        rawText: message.text
                     }]);
                     break;
                 }
@@ -750,9 +754,17 @@ export const MediaPhone = () => {
     }, []);
 
     return (
-        <div className="flex h-screen w-screen max-h-screen bg-neutral-950 text-neutral-50 font-sans overflow-hidden">
+        <div 
+            className="flex h-screen w-screen max-h-screen bg-neutral-950 text-neutral-50 font-sans overflow-hidden"
+            onMouseMove={(e) => {
+                if (isDisconnecting.current && (e.buttons & 1)) {
+                    // Re-use isDisconnecting as dragging flag for a quick hack, or add new ref
+                    // Actually let's just do it properly
+                }
+            }}
+        >
             {/* MAIN COLUMN: Chat Interface */}
-            <div className="flex-1 flex flex-col border-r border-neutral-800 relative">
+            <div className="flex-1 flex flex-col relative min-w-[300px]">
                 {/* Header */}
                 <div className="flex items-center justify-between p-4 border-b border-neutral-800 bg-neutral-900/50 backdrop-blur-md">
                     <div className="flex items-center gap-3">
@@ -814,14 +826,14 @@ export const MediaPhone = () => {
                                         <div className="flex items-center gap-2 mb-1 opacity-60 text-xs">
                                             <span>{log.category === 'transcription' ? 'You' : 'AI Agent'}</span>
                                             <span className="text-[10px]">{log.timestamp}</span>
-                                            {log.totalLatencyMs && (
+                                            {log.totalLatencyMs !== undefined && (
                                                 <span className="text-[10px] ml-auto">
-                                                    (Total: {log.totalLatencyMs}ms{log.backendLatencyMs ? `, Backend: ${log.backendLatencyMs.toFixed(0)}ms` : ''})
+                                                    (Total: {log.totalLatencyMs}ms{log.backendLatencyMs !== undefined ? `, Backend: ${log.backendLatencyMs.toFixed(0)}ms` : ''})
                                                 </span>
                                             )}
                                         </div>
-                                        <div className="text-base leading-relaxed">
-                                            {log.message.replace(/^(📝 STT: |🤖 AI: )/, '').replace(/^"(.*)"$/, '$1').split('" (')[0]}
+                                        <div className="text-base leading-relaxed whitespace-pre-wrap">
+                                            {log.rawText || log.message}
                                         </div>
                                     </div>
                                 </div>
@@ -907,8 +919,32 @@ export const MediaPhone = () => {
                 </div>
             </div>
 
+            {/* Resizer */}
+            <div 
+                className="w-1 bg-neutral-800 hover:bg-neutral-600 cursor-col-resize active:bg-emerald-500 transition-colors z-50 flex-shrink-0"
+                onMouseDown={(e) => {
+                    const startX = e.clientX;
+                    const startWidth = panelWidth;
+                    
+                    const onMouseMove = (moveEvent: MouseEvent) => {
+                        const newWidth = startWidth - (moveEvent.clientX - startX);
+                        if (newWidth > 300 && newWidth < window.innerWidth - 400) {
+                            setPanelWidth(newWidth);
+                        }
+                    };
+                    
+                    const onMouseUp = () => {
+                        document.removeEventListener('mousemove', onMouseMove);
+                        document.removeEventListener('mouseup', onMouseUp);
+                    };
+                    
+                    document.addEventListener('mousemove', onMouseMove);
+                    document.addEventListener('mouseup', onMouseUp);
+                }}
+            />
+
             {/* SIDE PANEL: Technical Logs & Stats */}
-            <div className="w-[450px] flex flex-col bg-neutral-900 border-l border-neutral-800">
+            <div style={{ width: panelWidth }} className="flex flex-col bg-neutral-900 border-l border-neutral-800 flex-shrink-0 relative">
                 <div className="flex border-b border-neutral-800">
                     <button 
                         onClick={() => setActiveTab('logs')}
@@ -950,15 +986,33 @@ export const MediaPhone = () => {
                                 </div>
                             </div>
                         </div>
+
+                        {/* Render Diagnostic Logs Here */}
+                        <div className="space-y-2 mt-4">
+                            {logs.filter(l => l.category === 'diagnostic').reverse().map(log => (
+                                <div key={log.id} className="text-xs font-mono p-3 rounded-lg bg-neutral-900 border border-neutral-700 shadow-sm">
+                                    <div className="flex justify-between items-start mb-2 opacity-70 text-neutral-300">
+                                        <span>{log.timestamp}</span>
+                                        <span className="uppercase text-[9px] px-1 rounded bg-blue-900/50 text-blue-300 border border-blue-800/50">Diagnostic</span>
+                                    </div>
+                                    <div className="text-blue-300 font-semibold mb-2">{log.message}</div>
+                                    {log.details && (
+                                        <pre className="mt-2 p-3 bg-neutral-950 rounded text-[10px] overflow-x-auto text-neutral-300 border border-neutral-800">
+                                            {JSON.stringify(log.details, null, 2)}
+                                        </pre>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 )}
 
                 {activeTab === 'logs' && (
                     <div className="flex-1 overflow-y-auto p-3 space-y-2">
-                        {logs.filter(l => l.category !== 'transcription' && l.category !== 'ai_response').length === 0 ? (
+                        {logs.filter(l => l.category !== 'transcription' && l.category !== 'ai_response' && l.category !== 'diagnostic').length === 0 ? (
                             <p className="text-neutral-600 text-xs text-center mt-10">No system events.</p>
                         ) : (
-                            [...logs].filter(l => l.category !== 'transcription' && l.category !== 'ai_response').reverse().map(log => (
+                            [...logs].filter(l => l.category !== 'transcription' && l.category !== 'ai_response' && l.category !== 'diagnostic').reverse().map(log => (
                                 <div key={log.id} className="text-xs font-mono p-2 rounded bg-neutral-950/50 border border-neutral-800/50">
                                     <div className="flex justify-between items-start mb-1 opacity-50 text-neutral-300">
                                         <span>{log.timestamp}</span>
@@ -966,8 +1020,7 @@ export const MediaPhone = () => {
                                     </div>
                                     <div className={`break-words ${log.type === 'error' ? 'text-red-400' :
                                             log.type === 'success' ? 'text-emerald-400' :
-                                                log.category === 'diagnostic' ? 'text-blue-400' :
-                                                    'text-neutral-300'
+                                                'text-neutral-300'
                                         }`}>
                                         {log.type === 'error' && <AlertCircle className="w-3 h-3 inline mr-1 -mt-0.5" />}
                                         {log.message}
