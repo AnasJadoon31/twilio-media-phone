@@ -5,8 +5,9 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Mic, MicOff, Phone, PhoneOff, Loader2, MessageSquare, Activity, Terminal, AlertCircle, PanelRight, FileText } from "lucide-react";
+import { Mic, MicOff, Phone, PhoneOff, Loader2, MessageSquare, Activity, Terminal, AlertCircle, PanelRight, FileText, History, ChevronDown, ChevronUp } from "lucide-react";
 import { DiagnosticsDashboard } from "./DiagnosticsDashboard";
+import { CallSelector } from "./CallSelector";
 
 type LogCategory = 'system' | 'event' | 'transcription' | 'ai_response' | 'diagnostic' | 'error';
 type LogEntryType = 'info' | 'error' | 'success';
@@ -71,7 +72,11 @@ export const MediaPhone = () => {
     // Text input for direct AI testing (bypasses STT)
     const [textInput, setTextInput] = useState<string>("");
 
-    const [activeTab, setActiveTab] = useState<'logs' | 'stats'>('logs');
+    const [activeTab, setActiveTab] = useState<'logs' | 'stats' | 'history'>('logs');
+    const [callHistory, setCallHistory] = useState<any[]>([]);
+    const [historyOffset, setHistoryOffset] = useState<number>(0);
+    const [isFetchingHistory, setIsFetchingHistory] = useState<boolean>(false);
+    const [expandedCallId, setExpandedCallId] = useState<string | null>(null);
     const lastSttTimestampRef = useRef<number | null>(null);
     const [panelWidth, setPanelWidth] = useState(450);
     const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
@@ -90,6 +95,36 @@ export const MediaPhone = () => {
         }
         setShowDiagnosticsPage(true);
     };
+
+    const fetchCallHistory = async (offset: number = 0) => {
+        if (!aiCoreUrl || !apiKey) return;
+        setIsFetchingHistory(true);
+        try {
+            const response = await fetch(`${aiCoreUrl}/api/v1/calls?limit=50&offset=${offset}`, {
+                headers: {
+                    'accept': 'application/json',
+                    'x-internal-api-key': apiKey
+                }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setCallHistory(data || []);
+                setHistoryOffset(offset);
+            } else {
+                addLog(`Failed to fetch call history: ${response.statusText}`, 'error');
+            }
+        } catch (error: any) {
+            addLog(`Failed to fetch call history: ${error.message}`, 'error');
+        } finally {
+            setIsFetchingHistory(false);
+        }
+    };
+
+    useEffect(() => {
+        if (activeTab === 'history') {
+            fetchCallHistory(0);
+        }
+    }, [activeTab]);
 
     // Call management
     const isDisconnecting = useRef(false);
@@ -788,9 +823,6 @@ export const MediaPhone = () => {
                     </div>
 
                     <div className="flex items-center gap-2">
-                        <Button onClick={handleOpenDiagnostics} variant="outline" className="border-blue-800 text-blue-400 hover:bg-blue-900/30 hover:text-blue-300 transition-colors">
-                            <FileText className="w-4 h-4 mr-2" /> Diagnostics
-                        </Button>
                         <Button variant="ghost" size="icon" onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="text-neutral-400 hover:text-neutral-200" title="Toggle Sidebar">
                             <PanelRight className="w-5 h-5" />
                         </Button>
@@ -803,6 +835,9 @@ export const MediaPhone = () => {
                                 <PhoneOff className="w-4 h-4 mr-2" /> Disconnect
                             </Button>
                         )}
+                        <Button onClick={handleOpenDiagnostics} className="bg-blue-600 hover:bg-blue-500 text-white shadow-md transition-all">
+                            <FileText className="w-4 h-4 mr-2" /> Diagnostics
+                        </Button>
                     </div>
                 </div>
 
@@ -979,6 +1014,12 @@ export const MediaPhone = () => {
                     >
                         <Activity className="w-4 h-4" /> Call Stats
                     </button>
+                    <button 
+                        onClick={() => setActiveTab('history')}
+                        className={`flex-1 p-4 font-semibold text-sm flex items-center justify-center gap-2 transition-colors ${activeTab === 'history' ? 'bg-neutral-800 text-neutral-200 border-b-2 border-emerald-500' : 'text-neutral-500 hover:text-neutral-300'}`}
+                    >
+                        <History className="w-4 h-4" /> History
+                    </button>
                 </div>
 
                 {activeTab === 'stats' && (
@@ -988,13 +1029,15 @@ export const MediaPhone = () => {
                             <div className="space-y-2">
                                 <Input size={1} placeholder="AI Core URL" className="h-8 text-xs bg-neutral-900 text-neutral-300 border-neutral-800" value={aiCoreUrl} onChange={e => setAiCoreUrl(e.target.value)} />
                                 <Input type="password" size={1} placeholder="API Key" className="h-8 text-xs bg-neutral-900 text-neutral-300 border-neutral-800" value={apiKey} onChange={e => setApiKey(e.target.value)} />
-                                <div className="flex gap-2">
-                                    <Input
-                                        placeholder="Specific Call SID (optional)"
-                                        className="h-8 text-xs bg-neutral-900 text-neutral-300 border-neutral-800"
-                                        value={diagnosticCallSid}
-                                        onChange={e => setDiagnosticCallSid(e.target.value)}
-                                    />
+                                <div className="flex gap-2 items-center">
+                                    <div className="flex-1">
+                                        <CallSelector 
+                                            value={diagnosticCallSid} 
+                                            onChange={(val) => setDiagnosticCallSid(val)}
+                                            aiCoreUrl={aiCoreUrl}
+                                            apiKey={apiKey}
+                                        />
+                                    </div>
                                     <Button
                                         size="sm"
                                         variant="secondary"
@@ -1025,6 +1068,90 @@ export const MediaPhone = () => {
                                 </div>
                             ))}
                         </div>
+                    </div>
+                )}
+
+                {activeTab === 'history' && (
+                    <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-neutral-950/50">
+                        {isFetchingHistory ? (
+                            <div className="flex items-center justify-center h-full text-neutral-500">
+                                <Loader2 className="w-6 h-6 animate-spin mr-2" /> Loading history...
+                            </div>
+                        ) : callHistory.length === 0 ? (
+                            <div className="flex items-center justify-center h-full text-neutral-500">
+                                No calls found.
+                            </div>
+                        ) : (
+                            <div className="space-y-3">
+                                {callHistory.map((call) => {
+                                    const isExpanded = expandedCallId === call.call_id;
+                                    return (
+                                        <div key={call.call_id} className="bg-neutral-900 border border-neutral-800 rounded-lg overflow-hidden">
+                                            <div 
+                                                className="p-3 flex items-center justify-between cursor-pointer hover:bg-neutral-800/50 transition-colors"
+                                                onClick={() => setExpandedCallId(isExpanded ? null : call.call_id)}
+                                            >
+                                                <div className="flex flex-col gap-1">
+                                                    <span className="text-sm font-semibold text-neutral-200">{call.call_id}</span>
+                                                    <span className="text-xs text-neutral-500">{new Date(call.created_at).toLocaleString()}</span>
+                                                </div>
+                                                <div className="flex items-center gap-3">
+                                                    <Badge variant="outline" className="bg-neutral-950 text-neutral-400 border-neutral-700">
+                                                        {call.state}
+                                                    </Badge>
+                                                    {isExpanded ? <ChevronUp className="w-4 h-4 text-neutral-500" /> : <ChevronDown className="w-4 h-4 text-neutral-500" />}
+                                                </div>
+                                            </div>
+                                            
+                                            {isExpanded && (
+                                                <div className="p-4 border-t border-neutral-800 bg-neutral-950 text-sm space-y-3">
+                                                    <div className="grid grid-cols-2 gap-2 text-xs">
+                                                        <div className="text-neutral-500">Session ID:</div>
+                                                        <div className="text-neutral-300 font-mono truncate" title={call.session_id}>{call.session_id}</div>
+                                                        <div className="text-neutral-500">Tenant:</div>
+                                                        <div className="text-neutral-300 truncate">{call.tenant_slug}</div>
+                                                        <div className="text-neutral-500">Updated At:</div>
+                                                        <div className="text-neutral-300">{new Date(call.updated_at).toLocaleString()}</div>
+                                                    </div>
+                                                    
+                                                    <Button 
+                                                        onClick={async (e) => {
+                                                            e.stopPropagation();
+                                                            await fetchDiagnostics(call.call_id);
+                                                            setShowDiagnosticsPage(true);
+                                                        }} 
+                                                        className="w-full mt-2 bg-blue-600 hover:bg-blue-500 text-white"
+                                                        size="sm"
+                                                    >
+                                                        <FileText className="w-3 h-3 mr-2" /> View Diagnostics
+                                                    </Button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                                
+                                <div className="flex items-center justify-between pt-4 border-t border-neutral-800">
+                                    <Button 
+                                        variant="outline" 
+                                        size="sm" 
+                                        disabled={historyOffset === 0 || isFetchingHistory}
+                                        onClick={() => fetchCallHistory(Math.max(0, historyOffset - 50))}
+                                    >
+                                        Previous
+                                    </Button>
+                                    <span className="text-xs text-neutral-500">Offset: {historyOffset}</span>
+                                    <Button 
+                                        variant="outline" 
+                                        size="sm" 
+                                        disabled={callHistory.length < 50 || isFetchingHistory}
+                                        onClick={() => fetchCallHistory(historyOffset + 50)}
+                                    >
+                                        Next
+                                    </Button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -1063,6 +1190,11 @@ export const MediaPhone = () => {
                 <DiagnosticsDashboard 
                     data={[...logs].reverse().find(l => l.category === 'diagnostic')?.details || null}
                     onClose={() => setShowDiagnosticsPage(false)} 
+                    aiCoreUrl={aiCoreUrl}
+                    apiKey={apiKey}
+                    onFetchCall={async (sid) => {
+                        await fetchDiagnostics(sid);
+                    }}
                 />
             )}
         </div>
