@@ -217,67 +217,15 @@ export const MediaPhone = () => {
     const bgMusicRef = useRef<HTMLAudioElement | null>(null);
 
     useEffect(() => {
-        let intervalId: ReturnType<typeof setInterval> | null = null;
-        let timeoutId: ReturnType<typeof setTimeout> | null = null;
-        let ttsActive = false;
-
-        const playFillerWord = () => {
-            if (!ttsActive && window.speechSynthesis) {
-                ttsActive = true;
-                const FILLER_SENTENCES = [
-                    "Please hold, your request is under process.",
-                    "Give me just a moment to check on that.",
-                    "Still working on it, please stay on the line.",
-                    "Just a few more seconds...",
-                    "Pulling up the information now."
-                ];
-                const randomSentence = FILLER_SENTENCES[Math.floor(Math.random() * FILLER_SENTENCES.length)];
-                const utterance = new SpeechSynthesisUtterance(randomSentence);
-                
-                if (bgMusicRef.current) bgMusicRef.current.volume = 0.02; // lower music volume during speech
-                
-                utterance.onend = () => {
-                    ttsActive = false;
-                    if (bgMusicRef.current) bgMusicRef.current.volume = 0.05; // restore music volume
-                };
-                utterance.onerror = () => {
-                    ttsActive = false;
-                    if (bgMusicRef.current) bgMusicRef.current.volume = 0.05;
-                };
-
-                // Use a decent English voice if available
-                const voices = window.speechSynthesis.getVoices();
-                const preferredVoice = voices.find(v => v.name.includes("Google") || v.name.includes("Samantha") || v.lang.startsWith("en-"));
-                if (preferredVoice) utterance.voice = preferredVoice;
-                
-                window.speechSynthesis.speak(utterance);
-            }
-        };
-
         if (bgMusicRef.current) {
-            bgMusicRef.current.volume = 0.05; // default low volume
+            bgMusicRef.current.volume = 0.05; // low volume
             if (isAiThinking) {
                 bgMusicRef.current.play().catch(e => console.error("Could not play bg music:", e));
-                
-                timeoutId = setTimeout(playFillerWord, 2000);
-                intervalId = setInterval(playFillerWord, 8000);
             } else {
                 bgMusicRef.current.pause();
                 bgMusicRef.current.currentTime = 0;
-                
-                if (window.speechSynthesis) {
-                    window.speechSynthesis.cancel();
-                }
             }
         }
-
-        return () => {
-            if (intervalId) clearInterval(intervalId);
-            if (timeoutId) clearTimeout(timeoutId);
-            if (window.speechSynthesis) {
-                window.speechSynthesis.cancel();
-            }
-        };
     }, [isAiThinking]);
 
     /**
@@ -1280,7 +1228,7 @@ export const MediaPhone = () => {
                                                             <FileText className="w-3 h-3 mr-2" /> View Diagnostics
                                                         </Button>
                                                         
-                                                        {call.state === 'in_transit' && (
+                                                        {call.state === 'in_conversation' && (
                                                             <Button
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
