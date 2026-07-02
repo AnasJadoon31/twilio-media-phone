@@ -647,7 +647,6 @@ export const MediaPhone = () => {
             switch (message.event) {
                 case 'media':
                     // AI audio is arriving — mute the mic encoder until playback finishes.
-                    setIsAiThinking(false);
                     isAiSpeakingRef.current = true;
                     processMediaMessage(message);
                     break;
