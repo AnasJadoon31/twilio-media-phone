@@ -77,6 +77,7 @@ export const MediaPhone = () => {
     const [historyOffset, setHistoryOffset] = useState<number>(0);
     const [isFetchingHistory, setIsFetchingHistory] = useState<boolean>(false);
     const [expandedCallId, setExpandedCallId] = useState<string | null>(null);
+    const [pendingResumeCallId, setPendingResumeCallId] = useState<string | null>(null);
     const lastSttTimestampRef = useRef<number | null>(null);
     const [panelWidth, setPanelWidth] = useState(450);
     const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
@@ -126,6 +127,60 @@ export const MediaPhone = () => {
         }
     }, [activeTab]);
 
+    const resumeCall = async (callSid: string) => {
+        try {
+            setPendingResumeCallId(null);
+            
+            // Reconstruct logs from diagnostics endpoint
+            if (aiCoreUrl && apiKey) {
+                const response = await fetch(`${aiCoreUrl.replace(/\/$/, '')}/api/v1/call/${callSid}/diagnostics`, {
+                    headers: { 'x-internal-api-key': apiKey }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    const turns = data?.turn_diagnostics || [];
+                    
+                    // Clear existing logs and insert history
+                    const newLogs: LogEntry[] = turns.flatMap((turn: any, index: number) => {
+                        const logs: LogEntry[] = [];
+                        if (turn.caller_text_original) {
+                            logs.push({
+                                id: `stt_${index}`,
+                                timestamp: new Date(turn.timestamp).toLocaleTimeString(),
+                                message: turn.caller_text_original,
+                                type: 'success',
+                                category: 'transcription',
+                                rawText: turn.caller_text_original
+                            });
+                        }
+                        if (turn.response_text) {
+                            logs.push({
+                                id: `ai_${index}`,
+                                timestamp: new Date(turn.timestamp).toLocaleTimeString(),
+                                message: turn.response_text,
+                                type: 'info',
+                                category: 'ai_response',
+                                rawText: turn.response_text,
+                                backendLatencyMs: turn.routing_latency_ms,
+                                totalLatencyMs: turn.total_latency_ms
+                            });
+                        }
+                        return logs;
+                    });
+                    
+                    setLogs(newLogs);
+                }
+            }
+            
+            // Initiate connection with existing sid
+            await _connectToCall(callSid);
+        } catch (err) {
+            console.error("Failed to resume call", err);
+            addLog("Failed to resume call properly", "error");
+        }
+    };
+
     // Call management
     const isDisconnecting = useRef(false);
     const wsRef = useRef<WebSocket | null>(null);
@@ -157,6 +212,73 @@ export const MediaPhone = () => {
     const isMicEnabledRef = useRef<boolean>(false);  // synced copy for encoder
     const [isServerMicLocked, setIsServerMicLocked] = useState<boolean>(false);
     const isServerMicLockedRef = useRef<boolean>(false);
+
+    const [isAiThinking, setIsAiThinking] = useState<boolean>(false);
+    const bgMusicRef = useRef<HTMLAudioElement | null>(null);
+
+    useEffect(() => {
+        let intervalId: ReturnType<typeof setInterval> | null = null;
+        let timeoutId: ReturnType<typeof setTimeout> | null = null;
+        let ttsActive = false;
+
+        const playFillerWord = () => {
+            if (!ttsActive && window.speechSynthesis) {
+                ttsActive = true;
+                const FILLER_SENTENCES = [
+                    "Please hold, your request is under process.",
+                    "Give me just a moment to check on that.",
+                    "Still working on it, please stay on the line.",
+                    "Just a few more seconds...",
+                    "Pulling up the information now."
+                ];
+                const randomSentence = FILLER_SENTENCES[Math.floor(Math.random() * FILLER_SENTENCES.length)];
+                const utterance = new SpeechSynthesisUtterance(randomSentence);
+                
+                if (bgMusicRef.current) bgMusicRef.current.volume = 0.02; // lower music volume during speech
+                
+                utterance.onend = () => {
+                    ttsActive = false;
+                    if (bgMusicRef.current) bgMusicRef.current.volume = 0.05; // restore music volume
+                };
+                utterance.onerror = () => {
+                    ttsActive = false;
+                    if (bgMusicRef.current) bgMusicRef.current.volume = 0.05;
+                };
+
+                // Use a decent English voice if available
+                const voices = window.speechSynthesis.getVoices();
+                const preferredVoice = voices.find(v => v.name.includes("Google") || v.name.includes("Samantha") || v.lang.startsWith("en-"));
+                if (preferredVoice) utterance.voice = preferredVoice;
+                
+                window.speechSynthesis.speak(utterance);
+            }
+        };
+
+        if (bgMusicRef.current) {
+            bgMusicRef.current.volume = 0.05; // default low volume
+            if (isAiThinking) {
+                bgMusicRef.current.play().catch(e => console.error("Could not play bg music:", e));
+                
+                timeoutId = setTimeout(playFillerWord, 2000);
+                intervalId = setInterval(playFillerWord, 8000);
+            } else {
+                bgMusicRef.current.pause();
+                bgMusicRef.current.currentTime = 0;
+                
+                if (window.speechSynthesis) {
+                    window.speechSynthesis.cancel();
+                }
+            }
+        }
+
+        return () => {
+            if (intervalId) clearInterval(intervalId);
+            if (timeoutId) clearTimeout(timeoutId);
+            if (window.speechSynthesis) {
+                window.speechSynthesis.cancel();
+            }
+        };
+    }, [isAiThinking]);
 
     /**
      * == UTILITY FUNCTIONS ==
@@ -430,11 +552,16 @@ export const MediaPhone = () => {
         }
     }
 
-    const _getStreamDestination = async () => {
+    const _getStreamDestination = async (existingCallSid?: string) => {
         try {
             addLog(`Initializing connection to media server at ${url}`, 'info');
 
-            callSidRef.current = generateCallSid();
+            if (existingCallSid) {
+                callSidRef.current = existingCallSid;
+                addLog(`Resuming existing call: ${existingCallSid}`, 'info');
+            } else {
+                callSidRef.current = generateCallSid();
+            }
 
             const response = await fetch(`${url}`, {
                 method: 'POST',
@@ -479,18 +606,20 @@ export const MediaPhone = () => {
     /**
      * == WEBSOCKET CONNECTION ==
      */
-    const _connectToMediaStream = async (streamUri: string) => {
+    const _connectToMediaStream = async (streamUri: string): Promise<void> => {
         addLog(`Connecting to media stream at ${streamUri}`, 'info');
         console.log('[WS] Connecting to:', streamUri);
 
-        let connectionTimeout: ReturnType<typeof setTimeout> | null = setTimeout(() => {
-            connectionTimeout = null;
-            if (wsRef.current && wsRef.current.readyState !== WebSocket.OPEN) {
-                const state = wsRef.current.readyState;
-                addLog(`Connection timed out after 10s (readyState=${state})`, 'error');
-                wsRef.current.close();
-            }
-        }, 10000);
+        return new Promise((resolve, reject) => {
+            let connectionTimeout: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+                connectionTimeout = null;
+                if (wsRef.current && wsRef.current.readyState !== WebSocket.OPEN) {
+                    const state = wsRef.current.readyState;
+                    addLog(`Connection timed out after 30s (readyState=${state})`, 'error');
+                    wsRef.current.close();
+                    reject(new Error("Connection timeout"));
+                }
+            }, 30000);
 
         wsRef.current = new WebSocket(streamUri);
 
@@ -509,6 +638,7 @@ export const MediaPhone = () => {
                 )
 
                 _startCall();
+                resolve();
             }, 500); // Wait a bit to ensure connection is stable
         })
 
@@ -530,15 +660,19 @@ export const MediaPhone = () => {
             }
 
             setIsConnected(false);
+            reject(new Error("WebSocket closed before connection could establish"));
         })
 
         wsRef.current.addEventListener("message", _handleWebSocketMessage)
 
         wsRef.current.addEventListener("error", (error: Event) => {
+            setIsAiThinking(false);
             if (connectionTimeout) { clearTimeout(connectionTimeout); connectionTimeout = null; }
             console.error('[WS] Error event — full details:', error);
             // The error event carries no useful info itself; the close event will follow with the actual code.
-            addLog(`⚠️  WebSocket error — close event will follow with details`, 'error');
+            addLog(`WebSocket error — close event will follow with details`, 'error');
+            reject(new Error("WebSocket error"));
+        })
         })
     }
 
@@ -553,8 +687,14 @@ export const MediaPhone = () => {
             switch (message.event) {
                 case 'media':
                     // AI audio is arriving — mute the mic encoder until playback finishes.
+                    setIsAiThinking(false);
                     isAiSpeakingRef.current = true;
                     processMediaMessage(message);
+                    break;
+
+                case 'error':
+                    setIsAiThinking(false);
+                    addLog(message.message || 'Error occurred', 'error');
                     break;
 
                 case 'mark':
@@ -565,6 +705,7 @@ export const MediaPhone = () => {
 
                 case 'clear':
                     addLog('Clear received - stopping audio playback');
+                    setIsAiThinking(false);
                     isAiSpeakingRef.current = false;
                     clearAudioBuffer();
                     break;
@@ -586,10 +727,16 @@ export const MediaPhone = () => {
                     break;
 
                 case 'processing':
+                    if (message.phase === 'complete' || message.phase === 'error') {
+                        setIsAiThinking(false);
+                    } else {
+                        setIsAiThinking(true);
+                    }
                     addLog(`⏳ ${message.message || 'Command is processing'}`, 'info');
                     break;
 
                 case 'response': {
+                    setIsAiThinking(false);
                     let totalLatency: number | undefined;
                     if (lastSttTimestampRef.current) {
                         totalLatency = Date.now() - lastSttTimestampRef.current;
@@ -638,6 +785,7 @@ export const MediaPhone = () => {
                 }
 
                 case 'ready':
+                    setIsAiThinking(false);
                     isServerMicLockedRef.current = false;
                     setIsServerMicLocked(false);
                     addLog(`✅ ${message.message || 'Ready for your next command.'}`, 'success');
@@ -698,7 +846,7 @@ export const MediaPhone = () => {
     /**
      * Connects to the websocket server and starts a new call stream.
      */
-    const _connectToCall = async () => {
+    const _connectToCall = async (existingCallSid?: string) => {
         console.log('Connecting to call with URL:', url);
 
         if (isConnected) return;
@@ -713,14 +861,17 @@ export const MediaPhone = () => {
             return;
         }
 
-        const streamUri = await _getStreamDestination();
+        const streamUri = await _getStreamDestination(existingCallSid);
         addLog(`Stream URI: ${streamUri}`, 'info');
 
-        await _connectToMediaStream(streamUri);
-
-        setIsConnected(true)
-
-        console.log('Connect to server via HTTP/WS');
+        try {
+            await _connectToMediaStream(streamUri);
+            setIsConnected(true)
+            console.log('Connect to server via HTTP/WS');
+        } catch (error: any) {
+            addLog(`Failed to connect to media stream: ${error.message}`, 'error');
+            setIsConnected(false);
+        }
     }
 
     /**
@@ -810,6 +961,8 @@ export const MediaPhone = () => {
                 }
             }}
         >
+            {/* Background Music Audio Element */}
+            <audio ref={bgMusicRef} src="/bg-music.mp3" loop />
             {/* MAIN COLUMN: Chat Interface */}
             <div className="flex-1 flex flex-col relative min-w-[300px]">
                 {/* Header */}
@@ -827,7 +980,7 @@ export const MediaPhone = () => {
                             <PanelRight className="w-5 h-5" />
                         </Button>
                         {!isConnected ? (
-                            <Button onClick={_connectToCall} className="bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow-[0_0_15px_rgba(5,150,105,0.3)]">
+                            <Button onClick={() => _connectToCall()} className="bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow-[0_0_15px_rgba(5,150,105,0.3)]">
                                 <Phone className="w-4 h-4 mr-2" /> Connect
                             </Button>
                         ) : (
@@ -1114,17 +1267,36 @@ export const MediaPhone = () => {
                                                         <div className="text-neutral-300">{new Date(call.updated_at).toLocaleString()}</div>
                                                     </div>
                                                     
-                                                    <Button 
-                                                        onClick={async (e) => {
-                                                            e.stopPropagation();
-                                                            await fetchDiagnostics(call.call_id);
-                                                            setShowDiagnosticsPage(true);
-                                                        }} 
-                                                        className="w-full mt-2 bg-blue-600 hover:bg-blue-500 text-white"
-                                                        size="sm"
-                                                    >
-                                                        <FileText className="w-3 h-3 mr-2" /> View Diagnostics
-                                                    </Button>
+                                                    <div className="flex gap-2 mt-2">
+                                                        <Button 
+                                                            onClick={async (e) => {
+                                                                e.stopPropagation();
+                                                                await fetchDiagnostics(call.call_id);
+                                                                setShowDiagnosticsPage(true);
+                                                            }} 
+                                                            className="flex-1 bg-blue-600 hover:bg-blue-500 text-white"
+                                                            size="sm"
+                                                        >
+                                                            <FileText className="w-3 h-3 mr-2" /> View Diagnostics
+                                                        </Button>
+                                                        
+                                                        {call.state === 'in_transit' && (
+                                                            <Button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    if (isConnected) {
+                                                                        setPendingResumeCallId(call.call_id);
+                                                                    } else {
+                                                                        resumeCall(call.call_id);
+                                                                    }
+                                                                }}
+                                                                className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white"
+                                                                size="sm"
+                                                            >
+                                                                <Phone className="w-3 h-3 mr-2" /> Continue Call
+                                                            </Button>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             )}
                                         </div>
@@ -1196,6 +1368,35 @@ export const MediaPhone = () => {
                         await fetchDiagnostics(sid);
                     }}
                 />
+            )}
+            
+            {pendingResumeCallId && (
+                <div className="absolute inset-0 z-[200] bg-black/80 flex items-center justify-center p-4">
+                    <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-6 max-w-sm w-full shadow-2xl">
+                        <h2 className="text-lg font-semibold text-neutral-100 mb-2 flex items-center gap-2"><AlertCircle className="w-5 h-5 text-amber-500" /> Active Call Detected</h2>
+                        <p className="text-neutral-400 text-sm mb-6">
+                            You are currently in an active call. Do you want to end the current call and resume the selected one?
+                        </p>
+                        <div className="flex gap-3 justify-end">
+                            <Button variant="outline" onClick={() => setPendingResumeCallId(null)} className="border-neutral-700 hover:bg-neutral-800 text-neutral-300">
+                                Cancel
+                            </Button>
+                            <Button 
+                                onClick={() => {
+                                    _disconnectFromCall();
+                                    // small delay to let websocket close properly
+                                    setTimeout(() => {
+                                        setIsConnected(false); // Force state
+                                        resumeCall(pendingResumeCallId);
+                                    }, 200);
+                                }} 
+                                className="bg-emerald-600 hover:bg-emerald-500 text-white"
+                            >
+                                Confirm & Resume
+                            </Button>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     )
