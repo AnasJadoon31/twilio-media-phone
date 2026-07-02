@@ -135,6 +135,9 @@ export const MediaPhone = () => {
             
             // Reconstruct logs from diagnostics endpoint
             if (aiCoreUrl && apiKey) {
+                if (tenantSlug) {
+                    setUrl(prevUrl => prevUrl.replace(/\/voice\/[^\/]+$/, `/voice/${tenantSlug}`));
+                }
                 const response = await fetch(`${aiCoreUrl.replace(/\/$/, '')}/api/v1/call/${callSid}/diagnostics`, {
                     headers: { 'x-internal-api-key': apiKey }
                 });
@@ -611,6 +614,12 @@ export const MediaPhone = () => {
             }
 
             setIsConnected(false);
+            if (audioContextRef.current) {
+                try {
+                    audioContextRef.current.close();
+                    audioContextRef.current = null;
+                } catch (_) { }
+            }
             reject(new Error("WebSocket closed before connection could establish"));
         })
 
