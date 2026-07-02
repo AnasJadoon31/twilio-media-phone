@@ -1252,20 +1252,22 @@ export const MediaPhone = () => {
                                 })}
                                 
                                 <div className="flex items-center justify-between pt-4 border-t border-neutral-800">
-                                    <Button 
-                                        variant="outline" 
-                                        size="sm" 
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
                                         disabled={historyOffset === 0 || isFetchingHistory}
                                         onClick={() => fetchCallHistory(Math.max(0, historyOffset - 50))}
+                                        className="border-neutral-700 bg-neutral-900 text-neutral-300 hover:bg-neutral-800 hover:text-white disabled:opacity-50 disabled:bg-neutral-900 disabled:text-neutral-500"
                                     >
                                         Previous
                                     </Button>
                                     <span className="text-xs text-neutral-500">Offset: {historyOffset}</span>
-                                    <Button 
-                                        variant="outline" 
-                                        size="sm" 
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
                                         disabled={callHistory.length < 50 || isFetchingHistory}
                                         onClick={() => fetchCallHistory(historyOffset + 50)}
+                                        className="border-neutral-700 bg-neutral-900 text-neutral-300 hover:bg-neutral-800 hover:text-white disabled:opacity-50 disabled:bg-neutral-900 disabled:text-neutral-500"
                                     >
                                         Next
                                     </Button>
