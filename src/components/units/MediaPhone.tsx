@@ -78,6 +78,7 @@ export const MediaPhone = () => {
     const [isFetchingHistory, setIsFetchingHistory] = useState<boolean>(false);
     const [expandedCallId, setExpandedCallId] = useState<string | null>(null);
     const [pendingResumeCallId, setPendingResumeCallId] = useState<string | null>(null);
+    const [pendingResumeTenantSlug, setPendingResumeTenantSlug] = useState<string | null>(null);
     const lastSttTimestampRef = useRef<number | null>(null);
     const [panelWidth, setPanelWidth] = useState(450);
     const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
@@ -127,9 +128,10 @@ export const MediaPhone = () => {
         }
     }, [activeTab]);
 
-    const resumeCall = async (callSid: string) => {
+    const resumeCall = async (callSid: string, tenantSlug?: string) => {
         try {
-            setPendingResumeCallId(null);
+            (() => { setPendingResumeCallId(null); setPendingResumeTenantSlug(null); })();
+            setPendingResumeTenantSlug(null);
             
             // Reconstruct logs from diagnostics endpoint
             if (aiCoreUrl && apiKey) {
@@ -174,7 +176,7 @@ export const MediaPhone = () => {
             }
             
             // Initiate connection with existing sid
-            await _connectToCall(callSid);
+            await _connectToCall(callSid, tenantSlug);
         } catch (err) {
             console.error("Failed to resume call", err);
             addLog("Failed to resume call properly", "error");
@@ -500,7 +502,7 @@ export const MediaPhone = () => {
         }
     }
 
-    const _getStreamDestination = async (existingCallSid?: string) => {
+    const _getStreamDestination = async (existingCallSid?: string, tenantSlug?: string) => {
         try {
             addLog(`Initializing connection to media server at ${url}`, 'info');
 
@@ -511,7 +513,8 @@ export const MediaPhone = () => {
                 callSidRef.current = generateCallSid();
             }
 
-            const response = await fetch(`${url}`, {
+            const targetUrl = tenantSlug ? url.replace(/\/voice\/[^\/]+$/, `/voice/${tenantSlug}`) : url;
+            const response = await fetch(`${targetUrl}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
@@ -794,7 +797,7 @@ export const MediaPhone = () => {
     /**
      * Connects to the websocket server and starts a new call stream.
      */
-    const _connectToCall = async (existingCallSid?: string) => {
+    const _connectToCall = async (existingCallSid?: string, tenantSlug?: string) => {
         console.log('Connecting to call with URL:', url);
 
         if (isConnected) return;
@@ -809,7 +812,7 @@ export const MediaPhone = () => {
             return;
         }
 
-        const streamUri = await _getStreamDestination(existingCallSid);
+        const streamUri = await _getStreamDestination(existingCallSid, tenantSlug);
         addLog(`Stream URI: ${streamUri}`, 'info');
 
         try {
@@ -1234,8 +1237,9 @@ export const MediaPhone = () => {
                                                                     e.stopPropagation();
                                                                     if (isConnected) {
                                                                         setPendingResumeCallId(call.call_id);
+                                                                        setPendingResumeTenantSlug(call.tenant_slug);
                                                                     } else {
-                                                                        resumeCall(call.call_id);
+                                                                        resumeCall(call.call_id, call.tenant_slug);
                                                                     }
                                                                 }}
                                                                 className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white"
@@ -1328,7 +1332,7 @@ export const MediaPhone = () => {
                             You are currently in an active call. Do you want to end the current call and resume the selected one?
                         </p>
                         <div className="flex gap-3 justify-end">
-                            <Button variant="outline" onClick={() => setPendingResumeCallId(null)} className="border-neutral-700 hover:bg-neutral-800 text-neutral-300">
+                            <Button variant="outline" onClick={() => (() => { setPendingResumeCallId(null); setPendingResumeTenantSlug(null); })()} className="border-neutral-700 hover:bg-neutral-800 text-neutral-300">
                                 Cancel
                             </Button>
                             <Button 
@@ -1337,7 +1341,7 @@ export const MediaPhone = () => {
                                     // small delay to let websocket close properly
                                     setTimeout(() => {
                                         setIsConnected(false); // Force state
-                                        resumeCall(pendingResumeCallId);
+                                        if (pendingResumeCallId) resumeCall(pendingResumeCallId, pendingResumeTenantSlug || undefined);
                                     }, 200);
                                 }} 
                                 className="bg-emerald-600 hover:bg-emerald-500 text-white"
