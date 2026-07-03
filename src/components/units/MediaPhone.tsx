@@ -5,9 +5,10 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Mic, MicOff, Phone, PhoneOff, Loader2, MessageSquare, Activity, Terminal, AlertCircle, PanelRight, FileText, History, ChevronDown, ChevronUp } from "lucide-react";
+import { Mic, MicOff, Phone, PhoneOff, Loader2, MessageSquare, Activity, Terminal, AlertCircle, PanelRight, FileText, History, ChevronDown, ChevronUp, LayoutDashboard } from "lucide-react";
 import { DiagnosticsDashboard } from "./DiagnosticsDashboard";
 import { CallSelector } from "./CallSelector";
+import Link from "next/link";
 
 type LogCategory = 'system' | 'event' | 'transcription' | 'ai_response' | 'diagnostic' | 'error';
 type LogEntryType = 'info' | 'error' | 'success';
@@ -950,6 +951,11 @@ export const MediaPhone = () => {
                         <Button onClick={handleOpenDiagnostics} className="bg-blue-600 hover:bg-blue-500 text-white shadow-md transition-all">
                             <FileText className="w-4 h-4 mr-2" /> Diagnostics
                         </Button>
+                        <Link href="/dashboard" target="_blank">
+                            <Button className="bg-purple-600 hover:bg-purple-500 text-white shadow-md transition-all">
+                                <LayoutDashboard className="w-4 h-4 mr-2" /> Dashboard
+                            </Button>
+                        </Link>
                     </div>
                 </div>
 
