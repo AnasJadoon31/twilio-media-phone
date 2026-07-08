@@ -8,6 +8,10 @@ export async function GET(req: Request) {
   if (!session?.user) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  if ((session.user as any).role !== "tenant") {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
   
   const tenantId = (session.user as any).id;
   
@@ -27,6 +31,10 @@ export async function POST(req: Request) {
   
   if (!session?.user) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if ((session.user as any).role !== "tenant") {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
   }
   
   const tenantId = (session.user as any).id;

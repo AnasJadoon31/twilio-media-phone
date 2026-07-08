@@ -41,6 +41,13 @@ type QueuedAudioItem = {
     markName: string;
 };
 
+type MediaPhoneProps = {
+    tenantSlug?: string;
+    embedded?: boolean;
+};
+
+const voiceAgentBaseUrl = (process.env.NEXT_PUBLIC_VOICE_AGENT_URL || "https://voice-agent.anas31.qzz.io").replace(/\/$/, "");
+
 const ThinkingBubble = () => {
     const [dots, setDots] = useState('');
     const phrases = ["Thinking", "Searching through the registers", "Analyzing intent", "Formulating response"];
@@ -62,13 +69,21 @@ const ThinkingBubble = () => {
     return <span>{phrases[phraseIndex]}{dots}</span>;
 }
 
-export const MediaPhone = () => {
+export const MediaPhone = ({ tenantSlug, embedded = false }: MediaPhoneProps) => {
+    const scopedTenantSlug = tenantSlug || "acme-corp";
+    const defaultVoiceUrl = `${voiceAgentBaseUrl}/voice/${scopedTenantSlug}`;
     const [logs, setLogs] = useState<LogEntry[]>([]);
-    const [url, setUrl] = useState<string>("https://voice-agent.anas31.qzz.io/voice/acme-corp");
+    const [url, setUrl] = useState<string>(defaultVoiceUrl);
     const [activeDepartment, setActiveDepartment] = useState<string>("");
 
     // Connection state
     const [isConnected, setIsConnected] = useState<boolean>(false);
+
+    useEffect(() => {
+        if (!isConnected) {
+            setUrl(defaultVoiceUrl);
+        }
+    }, [defaultVoiceUrl, isConnected]);
 
     // Text input for direct AI testing (bypasses STT)
     const [textInput, setTextInput] = useState<string>("");
@@ -111,7 +126,8 @@ export const MediaPhone = () => {
             });
             if (response.ok) {
                 const data = await response.json();
-                setCallHistory(data || []);
+                const calls = Array.isArray(data) ? data : [];
+                setCallHistory(tenantSlug ? calls.filter((call) => call.tenant_slug === tenantSlug) : calls);
                 setHistoryOffset(offset);
             } else {
                 addLog(`Failed to fetch call history: ${response.statusText}`, 'error');
@@ -506,7 +522,7 @@ export const MediaPhone = () => {
         }
     }
 
-    const _getStreamDestination = async (existingCallSid?: string, tenantSlug?: string) => {
+    const _getStreamDestination = async (existingCallSid?: string, targetTenantSlug?: string) => {
         try {
             addLog(`Initializing connection to media server at ${url}`, 'info');
 
@@ -517,7 +533,7 @@ export const MediaPhone = () => {
                 callSidRef.current = generateCallSid();
             }
 
-            const targetUrl = tenantSlug ? url.replace(/\/voice\/[^\/]+$/, `/voice/${tenantSlug}`) : url;
+            const targetUrl = targetTenantSlug ? url.replace(/\/voice\/[^\/]+$/, `/voice/${targetTenantSlug}`) : url;
             const response = await fetch(`${targetUrl}`, {
                 method: 'POST',
                 headers: {
@@ -806,7 +822,7 @@ export const MediaPhone = () => {
     /**
      * Connects to the websocket server and starts a new call stream.
      */
-    const _connectToCall = async (existingCallSid?: string, tenantSlug?: string) => {
+    const _connectToCall = async (existingCallSid?: string, targetTenantSlug: string = scopedTenantSlug) => {
         console.log('Connecting to call with URL:', url);
 
         if (isConnected) return;
@@ -821,7 +837,7 @@ export const MediaPhone = () => {
             return;
         }
 
-        const streamUri = await _getStreamDestination(existingCallSid, tenantSlug);
+        const streamUri = await _getStreamDestination(existingCallSid, targetTenantSlug);
         addLog(`Stream URI: ${streamUri}`, 'info');
 
         try {
@@ -913,7 +929,10 @@ export const MediaPhone = () => {
 
     return (
         <div 
-            className="flex h-screen w-screen max-h-screen bg-neutral-950 text-neutral-50 font-sans overflow-hidden"
+            className={embedded
+                ? "flex h-[760px] min-h-[640px] w-full bg-neutral-950 text-neutral-50 font-sans overflow-hidden rounded-2xl border border-white/10"
+                : "flex h-screen w-screen max-h-screen bg-neutral-950 text-neutral-50 font-sans overflow-hidden"
+            }
             onMouseMove={(e) => {
                 if (isDisconnecting.current && (e.buttons & 1)) {
                     // Re-use isDisconnecting as dragging flag for a quick hack, or add new ref
@@ -951,11 +970,13 @@ export const MediaPhone = () => {
                         <Button onClick={handleOpenDiagnostics} className="bg-blue-600 hover:bg-blue-500 text-white shadow-md transition-all">
                             <FileText className="w-4 h-4 mr-2" /> Diagnostics
                         </Button>
-                        <Link href="/dashboard" target="_blank">
-                            <Button className="bg-purple-600 hover:bg-purple-500 text-white shadow-md transition-all">
-                                <LayoutDashboard className="w-4 h-4 mr-2" /> Dashboard
-                            </Button>
-                        </Link>
+                        {!embedded && (
+                            <Link href="/dashboard" target="_blank">
+                                <Button className="bg-purple-600 hover:bg-purple-500 text-white shadow-md transition-all">
+                                    <LayoutDashboard className="w-4 h-4 mr-2" /> Dashboard
+                                </Button>
+                            </Link>
+                        )}
                     </div>
                 </div>
 
@@ -1154,6 +1175,7 @@ export const MediaPhone = () => {
                                             onChange={(val) => setDiagnosticCallSid(val)}
                                             aiCoreUrl={aiCoreUrl}
                                             apiKey={apiKey}
+                                            tenantSlug={tenantSlug}
                                         />
                                     </div>
                                     <Button

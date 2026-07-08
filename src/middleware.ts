@@ -1,3 +1,15 @@
-export { default } from "next-auth/middleware"
+import { withAuth } from "next-auth/middleware";
 
-export const config = { matcher: ["/dashboard/:path*"] }
+export default withAuth({
+  callbacks: {
+    authorized: ({ token, req }) => {
+      if (req.nextUrl.pathname.startsWith("/dashboard")) {
+        return token?.role === "tenant";
+      }
+
+      return Boolean(token);
+    },
+  },
+});
+
+export const config = { matcher: ["/dashboard/:path*"] };

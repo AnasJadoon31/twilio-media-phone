@@ -1,9 +1,5 @@
-import {MediaPhone} from "@/components/units/MediaPhone";
+import LoginPage from "./login/page";
 
 export default function Home() {
-    return (
-        <main>
-            <MediaPhone />
-        </main>
-    );
+    return <LoginPage />;
 }

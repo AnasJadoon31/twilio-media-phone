@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { Building2, Loader2, Plus, RefreshCw } from "lucide-react";
+import { Building2, KeyRound, Loader2, Plus, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,6 +23,13 @@ const slugify = (value: string) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 64);
+
+const generatePassword = () => {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
+  const values = new Uint32Array(18);
+  crypto.getRandomValues(values);
+  return Array.from(values, (value) => alphabet[value % alphabet.length]).join("");
+};
 
 export function ClientManager() {
   const [clients, setClients] = useState<ClientTenant[]>([]);
@@ -69,12 +76,20 @@ export function ClientManager() {
     }));
   };
 
+  const handleGeneratePassword = () => {
+    setForm((prev) => ({
+      ...prev,
+      password: generatePassword(),
+    }));
+  };
+
   const createClient = async (event: React.FormEvent) => {
     event.preventDefault();
     setSaving(true);
     setError("");
     setSuccess("");
     try {
+      const initialPassword = form.password;
       const res = await fetch("/api/tenants", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -88,7 +103,7 @@ export function ClientManager() {
         throw new Error(data?.error || "Failed to create client");
       }
       setForm({ name: "", slug: "", email: "", password: "" });
-      setSuccess(`Created ${data.name}. Use slug "${data.slug}" in webhook URLs.`);
+      setSuccess(`Created ${data.name}. Initial password: ${initialPassword}. Use slug "${data.slug}" in webhook URLs.`);
       await fetchClients();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create client");
@@ -169,15 +184,25 @@ export function ClientManager() {
         </div>
         <div className="space-y-2 lg:col-span-1">
           <Label htmlFor="client-password">Initial Password</Label>
-          <Input
-            id="client-password"
-            type="password"
-            value={form.password}
-            onChange={(event) => updateField("password", event.target.value)}
-            className="bg-neutral-950 border-neutral-800 text-neutral-100"
-            minLength={8}
-            required
-          />
+          <div className="flex gap-2">
+            <Input
+              id="client-password"
+              type="text"
+              value={form.password}
+              onChange={(event) => updateField("password", event.target.value)}
+              className="bg-neutral-950 border-neutral-800 text-neutral-100 font-mono"
+              minLength={8}
+              required
+            />
+            <Button
+              type="button"
+              onClick={handleGeneratePassword}
+              className="bg-neutral-800 text-neutral-100 hover:bg-neutral-700 border border-white/10"
+              title="Generate password"
+            >
+              <KeyRound className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
         <div className="flex items-end">
           <Button

@@ -8,6 +8,7 @@ interface CallSelectorProps {
     onChange: (callSid: string) => void;
     aiCoreUrl: string;
     apiKey: string;
+    tenantSlug?: string;
 }
 
 interface Call {
@@ -19,7 +20,7 @@ interface Call {
     tenant_slug: string;
 }
 
-export function CallSelector({ value, onChange, aiCoreUrl, apiKey }: CallSelectorProps) {
+export function CallSelector({ value, onChange, aiCoreUrl, apiKey, tenantSlug }: CallSelectorProps) {
     const [open, setOpen] = useState(false);
     const [calls, setCalls] = useState<Call[]>([]);
     const [loading, setLoading] = useState(false);
@@ -39,7 +40,8 @@ export function CallSelector({ value, onChange, aiCoreUrl, apiKey }: CallSelecto
                 });
                 if (response.ok) {
                     const data = await response.json();
-                    setCalls(data || []);
+                    const fetchedCalls = Array.isArray(data) ? data : [];
+                    setCalls(tenantSlug ? fetchedCalls.filter(call => call.tenant_slug === tenantSlug) : fetchedCalls);
                 }
             } catch (error) {
                 console.error("Failed to fetch calls for selector", error);
@@ -51,7 +53,7 @@ export function CallSelector({ value, onChange, aiCoreUrl, apiKey }: CallSelecto
         if (open && calls.length === 0) {
             fetchCalls();
         }
-    }, [open, aiCoreUrl, apiKey, calls.length]);
+    }, [open, aiCoreUrl, apiKey, calls.length, tenantSlug]);
 
     useEffect(() => {
         function handleClickOutside(event: MouseEvent) {

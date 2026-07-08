@@ -177,6 +177,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  if ((session.user as any).role !== "tenant") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   try {
     const tenantId = (session.user as { id?: string }).id;
     const body = (await req.json()) as ChannelConfigInput;

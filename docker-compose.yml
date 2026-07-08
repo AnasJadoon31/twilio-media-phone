@@ -22,6 +22,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_VOICE_AGENT_URL: ${NEXT_PUBLIC_VOICE_AGENT_URL:-https://voice-agent.anas31.qzz.io}
+        NEXT_PUBLIC_AI_CORE_URL: ${NEXT_PUBLIC_AI_CORE_URL:-https://api.operaios.qzz.io}
     restart: always
     ports:
       - "3000:3000"
@@ -29,6 +32,10 @@ services:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-twiliomediaphone}?schema=public
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-super-secret-default-key-change-in-production}
       - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
+      - SUPER_ADMIN_EMAIL=${SUPER_ADMIN_EMAIL:-superadmin@example.com}
+      - SUPER_ADMIN_PASSWORD=${SUPER_ADMIN_PASSWORD:-change-me-now}
+      - META_GRAPH_API_VERSION=${META_GRAPH_API_VERSION:-v23.0}
+      - PRISMA_DB_PUSH_MAX_ATTEMPTS=${PRISMA_DB_PUSH_MAX_ATTEMPTS:-20}
     depends_on:
       db:
         condition: service_healthy

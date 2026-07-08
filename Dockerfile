@@ -1,13 +1,13 @@
 FROM node:22-alpine AS base
 
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+RUN apk add --no-cache libc6-compat openssl
+RUN corepack enable pnpm
+
 # Install dependencies only when needed
 FROM base AS deps
-# Check https://github.com/nodejs/docker-node/tree/b4117f9333da4138b03a546ec926ef50a31506c3#nodealpine to understand why libc6-compat might be needed.
-RUN apk add --no-cache libc6-compat
 WORKDIR /app
-
-# Enable pnpm
-RUN corepack enable pnpm
 
 # Install dependencies based on the preferred package manager
 COPY package.json pnpm-lock.yaml* ./
@@ -15,6 +15,7 @@ RUN pnpm i --frozen-lockfile
 
 # Generate Prisma client
 COPY prisma ./prisma
+COPY prisma.config.ts ./prisma.config.ts
 RUN pnpm prisma generate
 
 # Rebuild the source code only when needed
@@ -23,11 +24,12 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Enable pnpm
-RUN corepack enable pnpm
-
 # Next.js telemetry is disabled
 ENV NEXT_TELEMETRY_DISABLED 1
+ARG NEXT_PUBLIC_VOICE_AGENT_URL=https://voice-agent.anas31.qzz.io
+ARG NEXT_PUBLIC_AI_CORE_URL=https://api.operaios.qzz.io
+ENV NEXT_PUBLIC_VOICE_AGENT_URL=$NEXT_PUBLIC_VOICE_AGENT_URL
+ENV NEXT_PUBLIC_AI_CORE_URL=$NEXT_PUBLIC_AI_CORE_URL
 
 # Generate Prisma client again in builder just in case
 RUN pnpm prisma generate
@@ -47,13 +49,16 @@ RUN adduser --system --uid 1001 nextjs
 
 # Copy standalone output and public files
 COPY --from=builder /app/public ./public
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/pnpm-lock.yaml ./pnpm-lock.yaml
+
+# Install production dependencies so Prisma CLI is available for startup schema sync.
+RUN pnpm install --prod --frozen-lockfile
 
 # Automatically leverage output traces to reduce image size
 # https://nextjs.org/docs/advanced-features/output-file-tracing
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-
-USER nextjs
 
 EXPOSE 3000
 
@@ -61,20 +66,12 @@ ENV PORT 3000
 # set hostname to localhost
 ENV HOSTNAME "0.0.0.0"
 
-# Create a startup script to run migrations and start the app
-USER root
-RUN echo '#!/bin/sh' > /app/start.sh && \
-    echo 'npx prisma db push --accept-data-loss' >> /app/start.sh && \
-    echo 'node server.js' >> /app/start.sh && \
-    chmod +x /app/start.sh
-
-# Install prisma CLI for migrations (use pnpm local install, no global bin dir needed)
-RUN corepack enable pnpm && pnpm install prisma@7.8.0
-
-# Copy prisma schema and migrations
+# Copy prisma schema/config and startup entrypoint.
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=nextjs:nodejs /app/prisma.config.ts ./prisma.config.ts
+COPY --from=builder --chown=nextjs:nodejs /app/docker-entrypoint.sh ./docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh && chown -R nextjs:nodejs /app
 
 USER nextjs
 
-CMD ["/app/start.sh"]
+CMD ["/app/docker-entrypoint.sh"]

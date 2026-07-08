@@ -3,21 +3,42 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcrypt";
 import prisma from "@/lib/prisma";
 
+const superAdminEmail = process.env.SUPER_ADMIN_EMAIL || "superadmin@example.com";
+const superAdminPassword = process.env.SUPER_ADMIN_PASSWORD || "change-me-now";
+
 export const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
       name: "Credentials",
       credentials: {
         email: { label: "Email", type: "email" },
-        password: { label: "Password", type: "password" }
+        password: { label: "Password", type: "password" },
+        admin: { label: "Admin", type: "text" }
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
           return null;
         }
 
+        if ((credentials as any).admin === "true") {
+          const isSuperAdmin =
+            credentials.email.toLowerCase() === superAdminEmail.toLowerCase() &&
+            credentials.password === superAdminPassword;
+
+          if (!isSuperAdmin) {
+            return null;
+          }
+
+          return {
+            id: "super-admin",
+            email: superAdminEmail,
+            name: "Super Admin",
+            role: "admin",
+          };
+        }
+
         const tenant = await prisma.tenant.findUnique({
-          where: { email: credentials.email }
+          where: { email: credentials.email.toLowerCase() }
         });
 
         if (!tenant) {
@@ -34,7 +55,8 @@ export const authOptions: NextAuthOptions = {
           id: tenant.id,
           email: tenant.email,
           name: tenant.name,
-          slug: tenant.slug
+          slug: tenant.slug,
+          role: "tenant",
         };
       }
     })
@@ -44,6 +66,7 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.id = user.id;
         token.slug = (user as any).slug;
+        token.role = (user as any).role;
       }
       return token;
     },
@@ -51,6 +74,7 @@ export const authOptions: NextAuthOptions = {
       if (token && session.user) {
         (session.user as any).id = token.id;
         (session.user as any).slug = token.slug;
+        (session.user as any).role = token.role;
       }
       return session;
     }
