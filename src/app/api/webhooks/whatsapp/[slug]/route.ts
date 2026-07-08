@@ -2,6 +2,76 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 
 const GRAPH_API_VERSION = process.env.META_GRAPH_API_VERSION || "v23.0";
+const WHATSAPP_TEXT_LIMIT = 4096;
+
+type WhatsAppSendResult =
+  | { ok: true; messageId?: string }
+  | { ok: false; error: string; code?: string; status?: number };
+
+function outboundFailureId(result: Extract<WhatsAppSendResult, { ok: false }>) {
+  const code = result.code || result.status || "send_error";
+  return `failed:${code}:${result.error}`.slice(0, 500);
+}
+
+async function sendWhatsAppTextMessage({
+  accessToken,
+  phoneId,
+  to,
+  body,
+}: {
+  accessToken?: string | null;
+  phoneId?: string | null;
+  to?: string | null;
+  body: string;
+}): Promise<WhatsAppSendResult> {
+  if (!accessToken) {
+    return { ok: false, error: "WhatsApp access token is missing.", code: "missing_access_token" };
+  }
+
+  if (!phoneId) {
+    return { ok: false, error: "WhatsApp Phone Number ID is missing.", code: "missing_phone_number_id" };
+  }
+
+  if (!to) {
+    return { ok: false, error: "Recipient phone number is missing.", code: "missing_recipient" };
+  }
+
+  const recipient = to.replace(/^\+/, "").trim();
+  const text = body.length > WHATSAPP_TEXT_LIMIT ? `${body.slice(0, WHATSAPP_TEXT_LIMIT - 3)}...` : body;
+  const response = await fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/${phoneId}/messages`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: recipient,
+      type: "text",
+      text: {
+        preview_url: false,
+        body: text,
+      },
+    }),
+  });
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok || data?.error) {
+    return {
+      ok: false,
+      status: response.status,
+      code: data?.error?.code ? String(data.error.code) : undefined,
+      error: data?.error?.message || `WhatsApp API returned HTTP ${response.status}.`,
+    };
+  }
+
+  return {
+    ok: true,
+    messageId: data?.messages?.[0]?.id,
+  };
+}
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -57,7 +127,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
     }
 
     const senderId = message.from; // User's phone number
-    const receiverId = value.metadata?.display_phone_number;
+    const receiverId = value.metadata?.display_phone_number || config.phoneId;
     const messageText = message.text?.body;
     const externalMessageId = message.id;
 
@@ -78,28 +148,46 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
       }
     });
 
-    // Send to AI Core
-    const aiResponse = await fetch("https://api.operaios.qzz.io/api/v1/call/interact", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-internal-api-key": "dev-secret" // Keeping system hardcoded key for AI Core communication as seen in metrics
-      },
-      body: JSON.stringify({
-        company_slug: slug,
-        call_sid: `wa-${externalMessageId}`,
-        text: messageText,
-        channel: "whatsapp"
-      })
-    });
-
     let aiReplyText = "I'm sorry, I couldn't process that request right now.";
-    if (aiResponse.ok) {
-      const data = await aiResponse.json();
-      aiReplyText = data.reply || data.response_text || data.text || aiReplyText;
+
+    try {
+      // Send to AI Core
+      const aiResponse = await fetch("https://api.operaios.qzz.io/api/v1/call/interact", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-internal-api-key": "dev-secret" // Keeping system hardcoded key for AI Core communication as seen in metrics
+        },
+        body: JSON.stringify({
+          company_slug: slug,
+          call_sid: `wa-${externalMessageId}`,
+          text: messageText,
+          channel: "whatsapp"
+        })
+      });
+
+      if (aiResponse.ok) {
+        const data = await aiResponse.json();
+        aiReplyText = data.reply || data.response_text || data.text || aiReplyText;
+      } else {
+        console.error(`[WhatsApp:${slug}] AI Core returned HTTP ${aiResponse.status}`);
+      }
+    } catch (error) {
+      console.error(`[WhatsApp:${slug}] AI Core request failed:`, error);
     }
 
-    // Save outbound message
+    const sendResult = await sendWhatsAppTextMessage({
+      accessToken: config.accessToken,
+      phoneId: config.phoneId,
+      to: senderId,
+      body: aiReplyText,
+    });
+
+    if (!sendResult.ok) {
+      console.error(`[WhatsApp:${slug}] Outbound send failed:`, sendResult);
+    }
+
+    // Save outbound message after the Meta API attempt so the dashboard reflects the real send status.
     await prisma.message.create({
       data: {
         tenantId: tenant.id,
@@ -107,25 +195,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
         direction: "outbound",
         content: aiReplyText,
         senderId: receiverId,
-        receiverId: senderId
+        receiverId: senderId,
+        externalMessageId: sendResult.ok ? sendResult.messageId || "sent:accepted" : outboundFailureId(sendResult)
       }
     });
-
-    // Send reply back via WhatsApp API
-    if (config.accessToken && config.phoneId) {
-      await fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/${config.phoneId}/messages`, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${config.accessToken}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          messaging_product: "whatsapp",
-          to: senderId,
-          text: { body: aiReplyText }
-        })
-      });
-    }
 
     return new NextResponse("EVENT_RECEIVED", { status: 200 });
   } catch (error) {
