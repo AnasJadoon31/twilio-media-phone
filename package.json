@@ -36,7 +36,20 @@
     "@types/react-dom": "^19",
     "prisma": "^7.8.0",
     "tailwindcss": "^4",
+    "tsx": "^4.23.0",
     "tw-animate-css": "^1.3.4",
     "typescript": "^5"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/engines",
+      "bcrypt",
+      "prisma",
+      "sharp",
+      "esbuild"
+    ]
   }
 }
