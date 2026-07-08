@@ -1,4 +1,3 @@
-import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
@@ -34,7 +33,7 @@ export async function POST(req: Request) {
   
   try {
     const body = await req.json();
-    const { channelType, verifyToken, accessToken, phoneId, pageId, isActive } = body;
+    const { channelType, verifyToken, accessToken, phoneId, businessAccountId, pageId, isActive } = body;
     
     if (!channelType) {
       return Response.json({ error: "Channel type is required" }, { status: 400 });
@@ -51,6 +50,7 @@ export async function POST(req: Request) {
         verifyToken,
         accessToken,
         phoneId,
+        businessAccountId,
         pageId,
         isActive
       },
@@ -60,6 +60,7 @@ export async function POST(req: Request) {
         verifyToken,
         accessToken,
         phoneId,
+        businessAccountId,
         pageId,
         isActive: isActive ?? true
       }

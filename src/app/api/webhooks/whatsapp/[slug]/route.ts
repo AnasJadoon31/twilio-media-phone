@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 
+const GRAPH_API_VERSION = process.env.META_GRAPH_API_VERSION || "v23.0";
+
 export async function GET(req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const searchParams = req.nextUrl.searchParams;
@@ -111,7 +113,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
 
     // Send reply back via WhatsApp API
     if (config.accessToken && config.phoneId) {
-      await fetch(`https://graph.facebook.com/v17.0/${config.phoneId}/messages`, {
+      await fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/${config.phoneId}/messages`, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${config.accessToken}`,

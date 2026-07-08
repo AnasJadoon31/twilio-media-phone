@@ -9,6 +9,7 @@ import { MetricCard } from '@/components/dashboard/MetricCard';
 import { TenantTable } from '@/components/dashboard/TenantTable';
 import { TenantConfigPanel } from '@/components/dashboard/TenantConfigPanel';
 import { ChatHistory } from '@/components/dashboard/ChatHistory';
+import { ClientManager } from '@/components/dashboard/ClientManager';
 import { useSession, signOut } from 'next-auth/react';
 import { Button } from '@/components/ui/button';
 import { LogOut } from 'lucide-react';
@@ -58,7 +59,7 @@ export default function DashboardPage() {
   const isHealthy = status === 'healthy';
 
   return (
-    <div className="min-h-screen bg-black text-white selection:bg-purple-500/30">
+    <div className="min-h-screen bg-black text-white selection:bg-purple-500/30 overscroll-none">
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-purple-900/20 via-black to-black -z-10 pointer-events-none" />
       
       <div className="max-w-7xl mx-auto p-8 space-y-12">
@@ -82,15 +83,24 @@ export default function DashboardPage() {
         </header>
 
         {/* User Info & Settings Row */}
-        <section className="flex justify-between items-center bg-neutral-900/50 p-6 rounded-2xl border border-white/10 backdrop-blur-md">
+        <section className="flex flex-col gap-4 md:flex-row md:justify-between md:items-center bg-neutral-900/50 p-6 rounded-2xl border border-white/10 backdrop-blur-md">
           <div>
             <h2 className="text-xl font-bold">Welcome, {session?.user?.name || 'Tenant'}</h2>
             <p className="text-neutral-400 text-sm">Logged in as: {session?.user?.email}</p>
           </div>
-          <Button variant="outline" onClick={() => signOut()} className="border-white/10 hover:bg-white/5">
+          <Button
+            type="button"
+            onClick={() => signOut({ callbackUrl: '/login' })}
+            className="w-full md:w-auto border border-red-500/30 bg-red-500/10 text-red-200 hover:bg-red-500/20 hover:text-white"
+          >
             <LogOut size={16} className="mr-2" />
             Sign Out
           </Button>
+        </section>
+
+        {/* Client Management */}
+        <section className="space-y-6">
+          <ClientManager />
         </section>
 
         {/* System Metrics */}

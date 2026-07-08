@@ -28,6 +28,7 @@ model ChannelConfig {
   verifyToken  String?  // For webhooks validation
   accessToken  String?  // For sending messages
   phoneId      String?  // WA Phone ID, etc.
+  businessAccountId String? // WhatsApp Business Account ID (WABA)
   pageId       String?  // FB Page ID
   
   isActive     Boolean  @default(true)
