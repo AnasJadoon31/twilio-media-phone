@@ -64,9 +64,16 @@ ENV HOSTNAME "0.0.0.0"
 # Create a startup script to run migrations and start the app
 USER root
 RUN echo '#!/bin/sh' > /app/start.sh && \
-    echo 'npx prisma migrate deploy' >> /app/start.sh && \
+    echo 'npx prisma db push --accept-data-loss' >> /app/start.sh && \
     echo 'node server.js' >> /app/start.sh && \
     chmod +x /app/start.sh
+
+# Install prisma CLI for migrations
+RUN npm install -g prisma@7.8.0
+
+# Copy prisma schema and migrations
+COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
+COPY --from=builder --chown=nextjs:nodejs /app/prisma.config.ts ./prisma.config.ts
 
 USER nextjs
 
