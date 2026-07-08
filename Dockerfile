@@ -68,8 +68,8 @@ RUN echo '#!/bin/sh' > /app/start.sh && \
     echo 'node server.js' >> /app/start.sh && \
     chmod +x /app/start.sh
 
-# Install prisma CLI for migrations
-RUN npm install -g prisma@7.8.0
+# Install prisma CLI for migrations (using pnpm since npm has ECONNRESET issues in Docker build)
+RUN corepack enable pnpm && pnpm add -g prisma@7.8.0
 
 # Copy prisma schema and migrations
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
