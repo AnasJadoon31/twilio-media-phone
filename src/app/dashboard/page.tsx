@@ -7,8 +7,14 @@ import {
 } from 'lucide-react';
 import { MetricCard } from '@/components/dashboard/MetricCard';
 import { TenantTable } from '@/components/dashboard/TenantTable';
+import { TenantConfigPanel } from '@/components/dashboard/TenantConfigPanel';
+import { ChatHistory } from '@/components/dashboard/ChatHistory';
+import { useSession, signOut } from 'next-auth/react';
+import { Button } from '@/components/ui/button';
+import { LogOut } from 'lucide-react';
 
 export default function DashboardPage() {
+  const { data: session } = useSession();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -85,6 +91,18 @@ export default function DashboardPage() {
             <span className="text-xs font-medium text-neutral-400 tracking-widest uppercase">Live Updates</span>
           </div>
         </header>
+
+        {/* User Info & Settings Row */}
+        <section className="flex justify-between items-center bg-neutral-900/50 p-6 rounded-2xl border border-white/10 backdrop-blur-md">
+          <div>
+            <h2 className="text-xl font-bold">Welcome, {session?.user?.name || 'Tenant'}</h2>
+            <p className="text-neutral-400 text-sm">Logged in as: {session?.user?.email}</p>
+          </div>
+          <Button variant="outline" onClick={() => signOut()} className="border-white/10 hover:bg-white/5">
+            <LogOut size={16} className="mr-2" />
+            Sign Out
+          </Button>
+        </section>
 
         {/* System Metrics */}
         <section className="space-y-6">
@@ -173,6 +191,16 @@ export default function DashboardPage() {
         {/* Tenant Breakdown */}
         <section className="space-y-6">
           <TenantTable tenants={tenant_breakdown || []} />
+        </section>
+
+        {/* Channel Configurations */}
+        <section className="space-y-6">
+          <TenantConfigPanel />
+        </section>
+
+        {/* Chat History */}
+        <section className="space-y-6">
+          <ChatHistory />
         </section>
 
       </div>

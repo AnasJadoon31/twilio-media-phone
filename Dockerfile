@@ -13,6 +13,10 @@ RUN corepack enable pnpm
 COPY package.json pnpm-lock.yaml* ./
 RUN pnpm i --frozen-lockfile
 
+# Generate Prisma client
+COPY prisma ./prisma
+RUN pnpm prisma generate
+
 # Rebuild the source code only when needed
 FROM base AS builder
 WORKDIR /app
@@ -24,6 +28,9 @@ RUN corepack enable pnpm
 
 # Next.js telemetry is disabled
 ENV NEXT_TELEMETRY_DISABLED 1
+
+# Generate Prisma client again in builder just in case
+RUN pnpm prisma generate
 
 RUN pnpm run build
 
@@ -54,4 +61,13 @@ ENV PORT 3000
 # set hostname to localhost
 ENV HOSTNAME "0.0.0.0"
 
-CMD ["node", "server.js"]
+# Create a startup script to run migrations and start the app
+USER root
+RUN echo '#!/bin/sh' > /app/start.sh && \
+    echo 'npx prisma migrate deploy' >> /app/start.sh && \
+    echo 'node server.js' >> /app/start.sh && \
+    chmod +x /app/start.sh
+
+USER nextjs
+
+CMD ["/app/start.sh"]

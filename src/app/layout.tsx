@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { SessionProvider } from "@/components/SessionProvider";
 import "./globals.css";
 import {Header} from "@/components/units/header";
 
@@ -19,7 +20,10 @@ export default function RootLayout({
         data-theme="forge"
         data-typography
       >
-        {children}
+        <SessionProvider>
+          <Header />
+          {children}
+        </SessionProvider>
       </body>
     </html>
   );

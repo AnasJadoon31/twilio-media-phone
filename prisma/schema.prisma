@@ -1,0 +1,57 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Tenant {
+  id            String          @id @default(uuid())
+  slug          String          @unique
+  name          String
+  email         String          @unique
+  passwordHash  String
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  
+  channelConfigs ChannelConfig[]
+  messages       Message[]
+}
+
+model ChannelConfig {
+  id           String   @id @default(uuid())
+  tenantId     String
+  channelType  String   // "whatsapp", "instagram", "messenger", "twilio_sms"
+  
+  // Platform specific credentials stored securely
+  verifyToken  String?  // For webhooks validation
+  accessToken  String?  // For sending messages
+  phoneId      String?  // WA Phone ID, etc.
+  pageId       String?  // FB Page ID
+  
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, channelType])
+}
+
+model Message {
+  id               String   @id @default(uuid())
+  tenantId         String
+  channelType      String   // "whatsapp", "instagram", "messenger", "twilio_sms"
+  direction        String   // "inbound" or "outbound"
+  content          String
+  
+  senderId         String?  // User's phone number or external ID
+  receiverId       String?  // Tenant's phone number or external ID
+  
+  externalMessageId String? // ID from the platform
+  
+  createdAt        DateTime @default(now())
+  
+  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
