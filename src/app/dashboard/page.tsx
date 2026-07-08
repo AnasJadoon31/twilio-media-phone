@@ -42,7 +42,7 @@ export default function DashboardPage() {
     return () => clearInterval(interval);
   }, []);
 
-  if (loading && !data) {
+  if (loading && !data && !error) {
     return (
       <div className="min-h-screen bg-black text-white flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
@@ -53,19 +53,8 @@ export default function DashboardPage() {
     );
   }
 
-  if (error && !data) {
-    return (
-      <div className="min-h-screen bg-black text-white flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4 bg-red-950/30 p-8 rounded-2xl border border-red-500/30">
-          <AlertTriangle className="w-16 h-16 text-red-500" />
-          <h2 className="text-2xl font-bold text-red-400">System Error</h2>
-          <p className="text-red-300">{error}</p>
-        </div>
-      </div>
-    );
-  }
-
-  const { status, system_metrics, llm_metrics, task_dispatch_metrics, tenant_breakdown } = data;
+  const safeData = data || {};
+  const { status, system_metrics, llm_metrics, task_dispatch_metrics, tenant_breakdown } = safeData;
   const isHealthy = status === 'healthy';
 
   return (
