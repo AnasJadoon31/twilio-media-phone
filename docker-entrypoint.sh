@@ -20,4 +20,13 @@ until pnpm exec prisma db push --accept-data-loss; do
   sleep 3
 done
 
-exec node server.js
+node scripts/whatsapp-outbox-worker.mjs &
+WORKER_PID=$!
+
+trap 'kill "$WORKER_PID" 2>/dev/null' TERM INT
+
+node server.js &
+SERVER_PID=$!
+
+wait "$SERVER_PID"
+kill "$WORKER_PID" 2>/dev/null
