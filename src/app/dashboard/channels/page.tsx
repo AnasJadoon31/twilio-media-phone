@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ArrowLeft, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TenantConfigPanel } from "@/components/dashboard/TenantConfigPanel";
+import { WhatsAppQrPanel } from "@/components/dashboard/WhatsAppQrPanel";
 
 export default function ChannelSettingsPage() {
   return (
@@ -32,7 +33,10 @@ export default function ChannelSettingsPage() {
           </Button>
         </header>
 
-        <TenantConfigPanel />
+        <div className="space-y-6">
+          <WhatsAppQrPanel />
+          <TenantConfigPanel />
+        </div>
       </div>
     </div>
   );

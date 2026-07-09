@@ -14,18 +14,20 @@ model Tenant {
   passwordHash  String
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
-  
+
   channelConfigs ChannelConfig[]
   messages       Message[]
   contactProfiles ContactProfile[]
   contacts        Contact[]
   notifications   Notification[]
+  outboundMessageJobs OutboundMessageJob[]
+  whatsappGroupSettings WhatsAppGroupSetting[]
 }
 
 model ChannelConfig {
   id           String   @id @default(uuid())
   tenantId     String
-  channelType  String   // "whatsapp", "instagram", "messenger", "twilio_sms"
+  channelType  String   // "whatsapp_qr", "whatsapp", "instagram", "messenger", "twilio_sms"
   
   // Platform specific credentials stored securely
   verifyToken  String?  // For webhooks validation
@@ -34,6 +36,18 @@ model ChannelConfig {
   businessAccountId String? // WhatsApp Business Account ID (WABA)
   pageId       String?  // FB Page ID
   
+  provider             String?
+  providerInstanceId   String?
+  providerInstanceName String?
+  connectionStatus     String?
+  qrCode               String?  @db.Text
+  qrUpdatedAt          DateTime?
+  webhookSecret        String?
+  voiceReplyMode       String   @default("voice") // "voice", "text", "both"
+  groupReplyRule       String   @default("mention_keyword")
+  groupKeywords        Json?
+  providerMetadata     Json?
+
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -47,7 +61,7 @@ model Message {
   id               String   @id @default(uuid())
   tenantId         String
   contactId        String?
-  channelType      String   // "whatsapp", "instagram", "messenger", "twilio_sms"
+  channelType      String   // "whatsapp_qr", "whatsapp", "instagram", "messenger", "twilio_sms"
   direction        String   // "inbound" or "outbound"
   content          String
   
@@ -55,15 +69,26 @@ model Message {
   receiverId       String?  // Tenant's phone number or external ID
   
   externalMessageId String? // ID from the platform
+  provider          String?
+  chatId            String?
+  groupId           String?
+  participantId     String?
+  mediaType         String?
+  transcript        String? @db.Text
+  processingStatus  String?
+  providerPayload   Json?
   
   createdAt        DateTime @default(now())
   
   tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   contact          Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  outboundJobs     OutboundMessageJob[]
 
   @@index([tenantId, createdAt])
   @@index([tenantId, channelType, createdAt])
   @@index([contactId])
+  @@index([tenantId, externalMessageId])
+  @@index([tenantId, chatId])
 }
 
 model ContactProfile {
@@ -96,6 +121,7 @@ model Contact {
   profile       ContactProfile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
   messages      Message[]
   notifications Notification[]
+  outboundMessageJobs OutboundMessageJob[]
 
   @@unique([tenantId, channelType, externalId])
   @@index([tenantId, profileId])
@@ -127,4 +153,48 @@ model Notification {
   @@unique([tenantId, sourceType, sourceId])
   @@index([tenantId, dismissedAt, createdAt])
   @@index([tenantId, readAt])
+}
+
+model OutboundMessageJob {
+  id          String   @id @default(uuid())
+  tenantId    String
+  messageId   String?
+  contactId   String?
+  channelType String
+  jobType     String
+  status      String   @default("pending") // pending, processing, retry, sent, dead
+  attempts    Int      @default(0)
+  maxAttempts Int      @default(5)
+  nextRunAt   DateTime @default(now())
+  lockedAt    DateTime?
+  sentAt      DateTime?
+  payload     Json
+  lastError   String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  message Message? @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  contact Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, status, nextRunAt])
+  @@index([messageId])
+}
+
+model WhatsAppGroupSetting {
+  id          String   @id @default(uuid())
+  tenantId    String
+  channelType String   @default("whatsapp_qr")
+  groupJid    String
+  groupName   String?
+  isEnabled   Boolean  @default(false)
+  replyRule   String   @default("mention_keyword")
+  keywords    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, channelType, groupJid])
+  @@index([tenantId, channelType])
 }

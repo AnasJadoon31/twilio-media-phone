@@ -7,7 +7,8 @@ type DbClient = PrismaClient | Prisma.TransactionClient;
 export const OPERATOR_CHANNELS = [
   { id: "all", label: "All", shortLabel: "All" },
   { id: "voice", label: "Voice", shortLabel: "Voice" },
-  { id: "whatsapp", label: "WhatsApp", shortLabel: "WA" },
+  { id: "whatsapp_qr", label: "WhatsApp QR", shortLabel: "WA QR" },
+  { id: "whatsapp", label: "WhatsApp Cloud", shortLabel: "WA Cloud" },
   { id: "instagram", label: "Instagram", shortLabel: "IG" },
   { id: "messenger", label: "Messenger", shortLabel: "MSG" },
   { id: "twilio_sms", label: "Twilio SMS", shortLabel: "SMS" },
@@ -23,6 +24,14 @@ type MessagePayload = {
   senderId?: string | null;
   receiverId?: string | null;
   externalMessageId?: string | null;
+  provider?: string | null;
+  chatId?: string | null;
+  groupId?: string | null;
+  participantId?: string | null;
+  mediaType?: string | null;
+  transcript?: string | null;
+  processingStatus?: string | null;
+  providerPayload?: Prisma.InputJsonValue | null;
 };
 
 type MessageLike = Pick<
@@ -205,6 +214,14 @@ export async function createMessageWithContact(data: MessagePayload) {
         senderId: data.senderId,
         receiverId: data.receiverId,
         externalMessageId: data.externalMessageId,
+        provider: data.provider,
+        chatId: data.chatId,
+        groupId: data.groupId,
+        participantId: data.participantId,
+        mediaType: data.mediaType,
+        transcript: data.transcript,
+        processingStatus: data.processingStatus,
+        providerPayload: data.providerPayload ?? undefined,
       },
     });
 

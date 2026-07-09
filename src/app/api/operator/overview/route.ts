@@ -15,6 +15,7 @@ function isTenantSession(session: Session | null) {
 function configuredForChannel(channelType: string, config: any) {
   if (channelType === "voice") return true;
   if (!config) return false;
+  if (channelType === "whatsapp_qr") return Boolean(config.providerInstanceName && config.webhookSecret);
   if (channelType === "whatsapp") return Boolean(config.verifyToken && config.accessToken && config.phoneId);
   if (channelType === "instagram" || channelType === "messenger") {
     return Boolean(config.verifyToken && config.accessToken && config.pageId);

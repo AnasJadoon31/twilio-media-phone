@@ -27,7 +27,7 @@ type ConnectionTestResult = {
 };
 
 const CHANNELS = [
-  { id: "whatsapp", label: "WhatsApp" },
+  { id: "whatsapp", label: "WhatsApp Cloud" },
   { id: "instagram", label: "Instagram" },
   { id: "messenger", label: "Messenger" },
   { id: "twilio_sms", label: "Twilio SMS" },

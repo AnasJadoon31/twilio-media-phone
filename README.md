@@ -36,6 +36,27 @@ The interface provides simple controls to:
 * View connection status
 * Monitor detailed logs of all events and transmissions
 
+## WhatsApp QR-Core Deployment
+This app now supports WhatsApp QR as the primary WhatsApp channel through an
+Evolution API sidecar. The official Meta Cloud API channel remains available in
+the dashboard as **WhatsApp Cloud**.
+
+Coolify/Docker Compose runs four runtime pieces:
+* `app` — Next.js dashboard/API. Its entrypoint runs `prisma db push`, so the
+  new Prisma schema is generated/synced automatically on startup.
+* `db` — Postgres for app data and the Evolution sidecar schema.
+* `evolution-api` — shared WhatsApp QR sidecar with persistent session storage.
+* `whatsapp-worker` — outbox worker that processes queued QR text and voice jobs.
+
+Required environment variables:
+* `DATABASE_URL`, `NEXTAUTH_URL`, `NEXTAUTH_SECRET`
+* `EVOLUTION_API_URL`, `EVOLUTION_API_KEY`, `EVOLUTION_WEBHOOK_PUBLIC_BASE_URL`
+* `AI_CORE_URL`, `AI_CORE_API_KEY`
+* `VOICE_AGENT_URL`
+
+Keep `EVOLUTION_API_URL` internal/private when possible. Tenants use only the
+dashboard QR connection APIs; they never receive the Evolution API key.
+
 ## TODO
 Future enhancements to be added:
 - [ ] Add muting support

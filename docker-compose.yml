@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   db:
     image: postgres:15-alpine
@@ -17,6 +15,60 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+
+  evolution-api:
+    image: evoapicloud/evolution-api:${EVOLUTION_IMAGE_TAG:-v2.3.7}
+    restart: always
+    environment:
+      - SERVER_TYPE=http
+      - SERVER_PORT=8080
+      - SERVER_URL=${EVOLUTION_PUBLIC_URL:-http://localhost:8080}
+      - AUTHENTICATION_API_KEY=${EVOLUTION_API_KEY:-change-me-evolution-key}
+      - AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES=false
+      - DATABASE_PROVIDER=postgresql
+      - DATABASE_CONNECTION_URI=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-twiliomediaphone}?schema=evolution_api
+      - DATABASE_CONNECTION_CLIENT_NAME=evolution
+      - DATABASE_SAVE_DATA_INSTANCE=true
+      - DATABASE_SAVE_DATA_NEW_MESSAGE=true
+      - DATABASE_SAVE_MESSAGE_UPDATE=true
+      - DATABASE_SAVE_DATA_CONTACTS=true
+      - DATABASE_SAVE_DATA_CHATS=true
+      - DATABASE_SAVE_DATA_HISTORIC=false
+      - WEBHOOK_GLOBAL_ENABLED=false
+      - WEBHOOK_EVENTS_QRCODE_UPDATED=true
+      - WEBHOOK_EVENTS_MESSAGES_UPSERT=true
+      - WEBHOOK_EVENTS_MESSAGES_UPDATE=true
+      - WEBHOOK_EVENTS_MESSAGES_DELETE=true
+      - WEBHOOK_EVENTS_SEND_MESSAGE=true
+      - WEBHOOK_EVENTS_GROUPS_UPSERT=true
+      - WEBHOOK_EVENTS_GROUPS_UPDATE=true
+      - WEBHOOK_EVENTS_CONNECTION_UPDATE=true
+      - WEBHOOK_REQUEST_TIMEOUT_MS=60000
+      - CACHE_REDIS_ENABLED=true
+      - CACHE_REDIS_URI=redis://redis:6379/6
+      - CACHE_REDIS_PREFIX_KEY=evolution
+      - CACHE_REDIS_SAVE_INSTANCES=false
+      - LOG_LEVEL=ERROR,WARN,INFO,WEBHOOKS
+      - LOG_BAILEYS=error
+      - TELEMETRY_ENABLED=false
+      - CONFIG_SESSION_PHONE_CLIENT=${EVOLUTION_SESSION_CLIENT:-AI Voice Agent}
+      - CONFIG_SESSION_PHONE_NAME=Chrome
+      - QRCODE_LIMIT=30
+      - LANGUAGE=en
+    volumes:
+      - evolution_instances:/evolution/instances
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
 
   app:
     build:
@@ -36,9 +88,42 @@ services:
       - SUPER_ADMIN_PASSWORD=${SUPER_ADMIN_PASSWORD:-change-me-now}
       - META_GRAPH_API_VERSION=${META_GRAPH_API_VERSION:-v23.0}
       - PRISMA_DB_PUSH_MAX_ATTEMPTS=${PRISMA_DB_PUSH_MAX_ATTEMPTS:-20}
+      - EVOLUTION_API_URL=${EVOLUTION_API_URL:-http://evolution-api:8080}
+      - EVOLUTION_API_KEY=${EVOLUTION_API_KEY:-change-me-evolution-key}
+      - EVOLUTION_WEBHOOK_PUBLIC_BASE_URL=${EVOLUTION_WEBHOOK_PUBLIC_BASE_URL:-http://localhost:3000}
+      - AI_CORE_URL=${AI_CORE_URL:-https://api.operaios.qzz.io}
+      - AI_CORE_API_KEY=${AI_CORE_API_KEY:-dev-secret}
+      - VOICE_AGENT_URL=${VOICE_AGENT_URL:-https://voice-agent.anas31.qzz.io}
     depends_on:
       db:
         condition: service_healthy
+      evolution-api:
+        condition: service_started
+
+  whatsapp-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_VOICE_AGENT_URL: ${NEXT_PUBLIC_VOICE_AGENT_URL:-https://voice-agent.anas31.qzz.io}
+        NEXT_PUBLIC_AI_CORE_URL: ${NEXT_PUBLIC_AI_CORE_URL:-https://api.operaios.qzz.io}
+    restart: always
+    command: ["pnpm", "worker:whatsapp"]
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-twiliomediaphone}?schema=public
+      - EVOLUTION_API_URL=${EVOLUTION_API_URL:-http://evolution-api:8080}
+      - EVOLUTION_API_KEY=${EVOLUTION_API_KEY:-change-me-evolution-key}
+      - AI_CORE_URL=${AI_CORE_URL:-https://api.operaios.qzz.io}
+      - AI_CORE_API_KEY=${AI_CORE_API_KEY:-dev-secret}
+      - VOICE_AGENT_URL=${VOICE_AGENT_URL:-https://voice-agent.anas31.qzz.io}
+      - WHATSAPP_OUTBOX_POLL_INTERVAL_MS=${WHATSAPP_OUTBOX_POLL_INTERVAL_MS:-2500}
+    depends_on:
+      db:
+        condition: service_healthy
+      evolution-api:
+        condition: service_started
 
 volumes:
   db_data:
+  redis_data:
+  evolution_instances:

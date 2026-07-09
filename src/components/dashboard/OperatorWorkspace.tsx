@@ -30,7 +30,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MediaPhone } from "@/components/units/MediaPhone";
 
-type ChannelId = "all" | "voice" | "whatsapp" | "instagram" | "messenger" | "twilio_sms";
+type ChannelId = "all" | "voice" | "whatsapp_qr" | "whatsapp" | "instagram" | "messenger" | "twilio_sms";
 
 type ChannelSummary = {
   id: ChannelId;
@@ -125,9 +125,15 @@ const CHANNEL_META: Record<ChannelId, { label: string; short: string; className:
     icon: Phone,
   },
   whatsapp: {
-    label: "WhatsApp",
-    short: "WA",
+    label: "WhatsApp Cloud",
+    short: "WA Cloud",
     className: "border-green-500/30 bg-green-500/10 text-green-300",
+    icon: MessageCircle,
+  },
+  whatsapp_qr: {
+    label: "WhatsApp QR",
+    short: "WA QR",
+    className: "border-lime-500/30 bg-lime-500/10 text-lime-300",
     icon: MessageCircle,
   },
   instagram: {
