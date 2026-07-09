@@ -85,7 +85,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ secret:
     return Response.json({ ok: true });
   }
 
-  if (event === "GROUPS_UPSERT" || event === "GROUPS_UPDATE") {
+  if (event === "GROUPS_UPSERT" || event === "GROUP_UPDATE") {
     const groupJid = extractGroupJid(body);
     if (groupJid) {
       await prisma.whatsAppGroupSetting.upsert({
