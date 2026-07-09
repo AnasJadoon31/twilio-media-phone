@@ -214,6 +214,37 @@ async function createOutboundMessage({ job, sourceMessage, payload, replyText, p
   });
 }
 
+async function resolveReplyJid(instanceName, payload) {
+  const local = [payload.replyJid, payload.chatId].find(
+    (jid) => typeof jid === "string" && jid.endsWith("@lid")
+  );
+  if (local) return local;
+
+  // Webhook payloads may carry only the phone-number JID even for LID-mode
+  // contacts, and WhatsApp rejects sends addressed that way. Evolution's own
+  // message store keeps the original @lid JID — look it up by message id.
+  if (payload.messageId && instanceName) {
+    try {
+      const data = await evolutionRequest(`/chat/findMessages/${encodeURIComponent(instanceName)}`, {
+        method: "POST",
+        body: JSON.stringify({ where: { key: { id: payload.messageId } }, limit: 1 }),
+      });
+      const key = data?.messages?.records?.[0]?.key || {};
+      const found = [key.remoteJid, key.remoteJidAlt].find(
+        (jid) => typeof jid === "string" && jid.endsWith("@lid")
+      );
+      if (found) {
+        console.log(`[whatsapp-worker] resolved reply JID ${found} for msg=${payload.messageId}`);
+        return found;
+      }
+    } catch (error) {
+      console.warn(`[whatsapp-worker] reply JID lookup failed msg=${payload.messageId}: ${error?.message || error}`);
+    }
+  }
+
+  return payload.replyJid || payload.chatId;
+}
+
 function isServiceUnavailable(error) {
   const code = error?.cause?.code || error?.code || "";
   if (["ECONNREFUSED", "ENOTFOUND", "ETIMEDOUT", "ECONNRESET", "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_HEADERS_TIMEOUT"].includes(code)) {
@@ -228,7 +259,8 @@ async function deferJob(job, error) {
 
   if (!payload.fallbackSent && payload.instanceName && payload.chatId) {
     try {
-      await sendText(payload.instanceName, payload.replyJid || payload.chatId, FALLBACK_REPLY);
+      const target = await resolveReplyJid(payload.instanceName, payload);
+      await sendText(payload.instanceName, target, FALLBACK_REPLY);
       payload.fallbackSent = true;
       console.log(`[whatsapp-worker] sent fallback reply job=${job.id}`);
     } catch (sendError) {
@@ -294,7 +326,7 @@ async function processJob(job) {
   const instanceName = payload.instanceName || config?.providerInstanceName;
   if (!instanceName) throw new Error("WhatsApp QR instance name is missing.");
   if (!payload.chatId) throw new Error("WhatsApp chat id is missing.");
-  const replyJid = payload.replyJid || payload.chatId;
+  const replyJid = await resolveReplyJid(instanceName, payload);
 
   const sourceMessage = job.message;
   let replyText = "";
