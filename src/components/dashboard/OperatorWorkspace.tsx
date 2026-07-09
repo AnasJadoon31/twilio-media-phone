@@ -194,6 +194,7 @@ export function OperatorWorkspace() {
   const [selectedCallId, setSelectedCallId] = useState<string | null>(null);
   const [voiceCalls, setVoiceCalls] = useState<VoiceCall[]>([]);
   const [loadingCalls, setLoadingCalls] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const tenantSlug = overview?.tenant.slug || ((session?.user as any)?.slug as string | undefined) || "";
 
   const loadOverview = useCallback(async (mode: "initial" | "refresh" = "refresh") => {
@@ -308,6 +309,18 @@ export function OperatorWorkspace() {
 
   const unreadNotifications = overview?.notifications.filter((notification) => !notification.readAt) || [];
 
+  function handleChannelSelect(channelId: ChannelId) {
+    setActiveChannel(channelId);
+
+    if (channelId === "voice") {
+      setSelectedProfileId(null);
+      loadVoiceCalls();
+      return;
+    }
+
+    setSelectedCallId(null);
+  }
+
   async function markProfileRead(profileId: string) {
     await fetch(`/api/operator/profiles/${profileId}/read`, {
       method: "POST",
@@ -384,6 +397,16 @@ export function OperatorWorkspace() {
     }
   }
 
+  function handleNotificationSelect(notification: NotificationItem) {
+    if (!notification.profileId || !overview) return;
+
+    const profile = overview.profiles.find((item) => item.id === notification.profileId);
+    if (profile) {
+      setNotificationsOpen(false);
+      handleSelectProfile(profile);
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-neutral-950 text-neutral-100">
@@ -410,6 +433,94 @@ export function OperatorWorkspace() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <div className="relative">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={() => setNotificationsOpen((open) => !open)}
+                className="relative border-neutral-800 bg-neutral-900 text-neutral-200 hover:bg-neutral-800 hover:text-white"
+                aria-label="Open notifications"
+              >
+                <Bell className="h-4 w-4" />
+                {unreadNotifications.length ? (
+                  <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-emerald-500 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                    {unreadNotifications.length}
+                  </span>
+                ) : null}
+              </Button>
+
+              {notificationsOpen ? (
+                <div className="absolute right-0 top-11 z-50 w-[min(420px,calc(100vw-2rem))] overflow-hidden rounded-lg border border-white/10 bg-neutral-950 shadow-2xl">
+                  <div className="flex items-center justify-between gap-3 border-b border-white/10 p-3">
+                    <div>
+                      <div className="text-sm font-semibold text-white">Notifications</div>
+                      <div className="text-xs text-neutral-500">
+                        {unreadNotifications.length} unread item{unreadNotifications.length === 1 ? "" : "s"}
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => updateNotifications("read_all")}
+                      disabled={!unreadNotifications.length}
+                      className="border-neutral-800 bg-neutral-900 text-neutral-300 hover:bg-neutral-800 hover:text-white"
+                    >
+                      Mark all
+                    </Button>
+                  </div>
+
+                  <div className="max-h-[420px] overflow-y-auto p-2">
+                    {!overview?.notifications.length ? (
+                      <div className="rounded-md border border-dashed border-neutral-800 px-3 py-8 text-center text-sm text-neutral-500">
+                        No notifications.
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {overview.notifications.map((notification) => (
+                          <div
+                            key={notification.id}
+                            className={`rounded-md border p-3 ${
+                              notification.readAt
+                                ? "border-white/10 bg-neutral-900 text-neutral-400"
+                                : "border-emerald-500/30 bg-emerald-500/10 text-neutral-100"
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleNotificationSelect(notification)}
+                                className="min-w-0 flex-1 text-left"
+                              >
+                                <div className="mb-1 flex items-center gap-2">
+                                  {notification.channelType ? channelBadge(notification.channelType) : null}
+                                  <span className="truncate text-sm font-medium">{notification.title}</span>
+                                </div>
+                                <div className="line-clamp-2 text-xs text-neutral-400">{notification.body}</div>
+                                <div className="mt-2 flex items-center gap-1 text-[11px] text-neutral-600">
+                                  <Clock3 className="h-3 w-3" />
+                                  {formatTime(notification.createdAt)}
+                                </div>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => updateNotifications("dismiss", [notification.id])}
+                                className="rounded p-1 text-neutral-500 hover:bg-neutral-800 hover:text-white"
+                                aria-label="Dismiss notification"
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
             <Button
               type="button"
               variant="outline"
@@ -491,7 +602,7 @@ export function OperatorWorkspace() {
                   <button
                     key={channel.id}
                     type="button"
-                    onClick={() => setActiveChannel(channel.id)}
+                    onClick={() => handleChannelSelect(channel.id)}
                     className={`flex min-h-11 items-center justify-center gap-1.5 rounded-md border px-2 text-xs font-semibold transition ${
                       active
                         ? "border-emerald-400 bg-emerald-500/15 text-emerald-100"
@@ -634,74 +745,76 @@ export function OperatorWorkspace() {
           </div>
         </aside>
 
-        <section className="min-w-0 space-y-4">
-          <div className="rounded-lg border border-white/10 bg-neutral-900/60 p-3">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2 text-sm font-semibold text-white">
-                  <Phone className="h-4 w-4 text-emerald-300" />
-                  Live voice panel
-                </div>
-                <div className="text-xs text-neutral-500">Voice remains available while you work through channels.</div>
-              </div>
-              <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-emerald-200">
-                Persistent
-              </Badge>
-            </div>
-            <MediaPhone tenantSlug={tenantSlug} embedded compact />
-          </div>
-
-          <div className="min-h-[420px] rounded-lg border border-white/10 bg-neutral-900/60">
-            {selectedCall ? (
-              <div className="p-5">
-                <div className="mb-4 flex items-start justify-between gap-3 border-b border-white/10 pb-4">
-                  <div className="min-w-0">
-                    <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-emerald-300">
-                      <Phone className="h-4 w-4" />
-                      Voice call selected
-                    </div>
-                    <h2 className="truncate text-xl font-semibold text-white">{selectedCall.call_id}</h2>
-                    <p className="mt-1 text-sm text-neutral-500">Session {selectedCall.session_id}</p>
-                  </div>
-                  <Badge variant="outline" className="border-neutral-700 bg-neutral-950 text-neutral-300">
-                    {selectedCall.state}
-                  </Badge>
-                </div>
-                <div className="grid gap-3 text-sm sm:grid-cols-2">
-                  <div className="rounded-md border border-white/10 bg-neutral-950 p-3">
-                    <div className="text-xs uppercase tracking-wide text-neutral-500">Started</div>
-                    <div className="mt-1 text-neutral-200">{formatTime(selectedCall.created_at)}</div>
-                  </div>
-                  <div className="rounded-md border border-white/10 bg-neutral-950 p-3">
-                    <div className="text-xs uppercase tracking-wide text-neutral-500">Last update</div>
-                    <div className="mt-1 text-neutral-200">{formatTime(selectedCall.updated_at)}</div>
-                  </div>
-                </div>
-              </div>
-            ) : selectedProfile ? (
-              <div className="flex h-full min-h-[420px] flex-col">
+        <section className="min-w-0">
+          <div className="min-h-[680px] rounded-lg border border-white/10 bg-neutral-900/60">
+            {selectedCall || activeChannel === "voice" ? (
+              <div className="flex h-full min-h-[680px] flex-col">
                 <div className="border-b border-white/10 p-4">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div className="min-w-0">
-                      <div className="mb-2 flex flex-wrap items-center gap-2">
-                        <UserRound className="h-4 w-4 text-neutral-400" />
-                        {selectedProfile.channels.map((channel) => (
-                          <span key={channel}>{channelBadge(channel)}</span>
-                        ))}
+                      <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-emerald-300">
+                        <Phone className="h-4 w-4" />
+                        Voice activity
                       </div>
-                      <h2 className="truncate text-xl font-semibold text-white">{selectedProfile.displayName}</h2>
-                      <div className="mt-1 text-sm text-neutral-500">{formatTime(selectedProfile.lastActivityAt)}</div>
+                      <h2 className="truncate text-xl font-semibold text-white">
+                        {selectedCall ? selectedCall.call_id : "Live voice panel"}
+                      </h2>
+                      <p className="mt-1 text-sm text-neutral-500">
+                        {selectedCall ? `Session ${selectedCall.session_id}` : "Connect, test, and monitor voice conversations."}
+                      </p>
                     </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => markProfileRead(selectedProfile.id)}
-                      className="border-neutral-800 bg-neutral-950 text-neutral-200 hover:bg-neutral-800 hover:text-white"
-                    >
-                      <Check className="h-4 w-4" />
-                      Mark read
-                    </Button>
+                    {selectedCall ? (
+                      <Badge variant="outline" className="border-neutral-700 bg-neutral-950 text-neutral-300">
+                        {selectedCall.state}
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-emerald-200">
+                        Voice
+                      </Badge>
+                    )}
                   </div>
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                  <MediaPhone tenantSlug={tenantSlug} embedded compact />
+                  {selectedCall ? (
+                    <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+                      <div className="rounded-md border border-white/10 bg-neutral-950 p-3">
+                        <div className="text-xs uppercase tracking-wide text-neutral-500">Started</div>
+                        <div className="mt-1 text-neutral-200">{formatTime(selectedCall.created_at)}</div>
+                      </div>
+                      <div className="rounded-md border border-white/10 bg-neutral-950 p-3">
+                        <div className="text-xs uppercase tracking-wide text-neutral-500">Last update</div>
+                        <div className="mt-1 text-neutral-200">{formatTime(selectedCall.updated_at)}</div>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ) : selectedProfile ? (
+              <div className="flex h-full min-h-[680px] flex-col">
+                <div className="border-b border-white/10 p-4">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0">
+                    <div className="mb-2 flex flex-wrap items-center gap-2">
+                      <UserRound className="h-4 w-4 text-neutral-400" />
+                      {selectedProfile.channels.map((channel) => (
+                        <span key={channel}>{channelBadge(channel)}</span>
+                      ))}
+                    </div>
+                    <h2 className="truncate text-xl font-semibold text-white">{selectedProfile.displayName}</h2>
+                    <div className="mt-1 text-sm text-neutral-500">{formatTime(selectedProfile.lastActivityAt)}</div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => markProfileRead(selectedProfile.id)}
+                    className="border-neutral-800 bg-neutral-950 text-neutral-200 hover:bg-neutral-800 hover:text-white"
+                  >
+                    <Check className="h-4 w-4" />
+                    Mark read
+                  </Button>
+                </div>
                 </div>
 
                 <div className="min-h-0 flex-1 overflow-y-auto p-4">
@@ -742,7 +855,7 @@ export function OperatorWorkspace() {
                 </div>
               </div>
             ) : (
-              <div className="flex min-h-[420px] flex-col items-center justify-center p-8 text-center text-neutral-500">
+              <div className="flex min-h-[680px] flex-col items-center justify-center p-8 text-center text-neutral-500">
                 <Inbox className="mb-3 h-10 w-10 text-neutral-700" />
                 <div className="text-sm">Select a contact or call to inspect the history.</div>
               </div>
@@ -788,84 +901,6 @@ export function OperatorWorkspace() {
               </div>
             </section>
           ) : null}
-
-          <section className="rounded-lg border border-white/10 bg-neutral-900/60">
-            <div className="border-b border-white/10 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="flex items-center gap-2 text-sm font-semibold text-white">
-                    <Bell className="h-4 w-4 text-emerald-300" />
-                    Notifications
-                  </div>
-                  <div className="text-xs text-neutral-500">
-                    {unreadNotifications.length} unread item{unreadNotifications.length === 1 ? "" : "s"}
-                  </div>
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => updateNotifications("read_all")}
-                  disabled={!unreadNotifications.length}
-                  className="border-neutral-800 bg-neutral-950 text-neutral-300 hover:bg-neutral-800 hover:text-white"
-                >
-                  Mark all
-                </Button>
-              </div>
-            </div>
-
-            <div className="max-h-[360px] overflow-y-auto p-3">
-              {!overview?.notifications.length ? (
-                <div className="rounded-md border border-dashed border-neutral-800 px-3 py-8 text-center text-sm text-neutral-500">
-                  No notifications.
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {overview.notifications.map((notification) => (
-                    <div
-                      key={notification.id}
-                      className={`rounded-md border p-3 ${
-                        notification.readAt
-                          ? "border-white/10 bg-neutral-950 text-neutral-400"
-                          : "border-emerald-500/30 bg-emerald-500/10 text-neutral-100"
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (notification.profileId) {
-                              const profile = overview.profiles.find((item) => item.id === notification.profileId);
-                              if (profile) handleSelectProfile(profile);
-                            }
-                          }}
-                          className="min-w-0 flex-1 text-left"
-                        >
-                          <div className="mb-1 flex items-center gap-2">
-                            {notification.channelType ? channelBadge(notification.channelType) : null}
-                            <span className="truncate text-sm font-medium">{notification.title}</span>
-                          </div>
-                          <div className="line-clamp-2 text-xs text-neutral-400">{notification.body}</div>
-                          <div className="mt-2 flex items-center gap-1 text-[11px] text-neutral-600">
-                            <Clock3 className="h-3 w-3" />
-                            {formatTime(notification.createdAt)}
-                          </div>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => updateNotifications("dismiss", [notification.id])}
-                          className="rounded p-1 text-neutral-500 hover:bg-neutral-800 hover:text-white"
-                          aria-label="Dismiss notification"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </section>
 
           <section className="rounded-lg border border-white/10 bg-neutral-900/60 p-4">
             <div className="mb-3 flex items-center justify-between">
