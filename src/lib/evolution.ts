@@ -27,7 +27,7 @@ const EVOLUTION_WEBHOOK_EVENTS = [
   "MESSAGES_DELETE",
   "SEND_MESSAGE",
   "GROUPS_UPSERT",
-  "GROUPS_UPDATE",
+  "GROUP_UPDATE",
 ];
 
 export type EvolutionSendTextPayload = {
@@ -86,13 +86,19 @@ async function evolutionRequest<T>(
     const data = text ? JSON.parse(text) : null;
 
     if (!response.ok) {
-      const message =
-        typeof data?.message === "string"
+      const detail = Array.isArray(data?.message)
+        ? data.message.flat(Infinity).join("; ")
+        : typeof data?.message === "string"
           ? data.message
           : typeof data?.error === "string"
             ? data.error
             : `Evolution API returned HTTP ${response.status}`;
-      throw new Error(message);
+      console.error("Evolution API request failed", {
+        path,
+        status: response.status,
+        body: text,
+      });
+      throw new Error(detail);
     }
 
     return data as T;
