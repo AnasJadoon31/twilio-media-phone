@@ -254,19 +254,22 @@ function isServiceUnavailable(error) {
   return /fetch failed|is required for|returned HTTP 502|returned HTTP 503|returned HTTP 504/i.test(message);
 }
 
+async function sendFallbackOnce(job, payload) {
+  if (payload.fallbackSent || !payload.instanceName || !payload.chatId) return;
+  try {
+    const target = await resolveReplyJid(payload.instanceName, payload);
+    await sendText(payload.instanceName, target, FALLBACK_REPLY);
+    payload.fallbackSent = true;
+    console.log(`[whatsapp-worker] sent fallback reply job=${job.id}`);
+  } catch (sendError) {
+    console.error(`[whatsapp-worker] fallback send failed job=${job.id}`, sendError);
+  }
+}
+
 async function deferJob(job, error) {
   const payload = job.payload || {};
 
-  if (!payload.fallbackSent && payload.instanceName && payload.chatId) {
-    try {
-      const target = await resolveReplyJid(payload.instanceName, payload);
-      await sendText(payload.instanceName, target, FALLBACK_REPLY);
-      payload.fallbackSent = true;
-      console.log(`[whatsapp-worker] sent fallback reply job=${job.id}`);
-    } catch (sendError) {
-      console.error(`[whatsapp-worker] fallback send failed job=${job.id}`, sendError);
-    }
-  }
+  await sendFallbackOnce(job, payload);
 
   await prisma.outboundMessageJob.update({
     where: { id: job.id },
@@ -291,6 +294,11 @@ async function markRetry(job, error) {
   const attempts = job.attempts + 1;
   const dead = attempts >= job.maxAttempts;
   const delayMs = Math.min(15 * 60_000, 2 ** attempts * 10_000);
+  const payload = job.payload || {};
+
+  // The user should hear back even when the job fails for a non-retryable
+  // reason (bad media, provider rejection) — one fallback per job, ever.
+  await sendFallbackOnce(job, payload);
 
   await prisma.outboundMessageJob.update({
     where: { id: job.id },
@@ -300,6 +308,7 @@ async function markRetry(job, error) {
       lockedAt: null,
       nextRunAt: new Date(Date.now() + delayMs),
       lastError: error instanceof Error ? error.message : String(error),
+      payload,
     },
   });
 
@@ -352,6 +361,9 @@ async function processJob(job) {
     providerMessageId = extractProviderMessageId(sendResult);
     await createOutboundMessage({ job, sourceMessage, payload, replyText, providerMessageId, mediaType: null });
   } else if (job.jobType === "whatsapp_qr_voice_reply") {
+    console.log(
+      `[whatsapp-worker] voice job=${job.id} media: base64=${payload.mediaBase64 ? `${String(payload.mediaBase64).length}ch` : "none"} url=${payload.mediaUrl ? "yes" : "none"} mime=${payload.mimetype || "?"}`
+    );
     const result = await callVoiceAgent({
       tenant,
       payload,
