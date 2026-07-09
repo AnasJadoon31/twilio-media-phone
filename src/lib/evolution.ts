@@ -19,6 +19,17 @@ export type EvolutionConnectionState = {
   [key: string]: unknown;
 };
 
+const EVOLUTION_WEBHOOK_EVENTS = [
+  "QRCODE_UPDATED",
+  "CONNECTION_UPDATE",
+  "MESSAGES_UPSERT",
+  "MESSAGES_UPDATE",
+  "MESSAGES_DELETE",
+  "SEND_MESSAGE",
+  "GROUPS_UPSERT",
+  "GROUPS_UPDATE",
+];
+
 export type EvolutionSendTextPayload = {
   number: string;
   text: string;
@@ -101,14 +112,46 @@ export function normalizeWhatsAppNumber(chatId: string) {
 }
 
 export function extractEvolutionQr(data: any) {
-  return (
+  const direct =
     data?.qrcode?.base64 ||
-    data?.qrcode?.code ||
     data?.base64 ||
-    data?.code ||
+    data?.qrCode ||
+    data?.qr_code ||
     data?.qr ||
     data?.data?.qrcode?.base64 ||
     data?.data?.base64 ||
+    null;
+
+  if (typeof direct === "string" && direct.trim()) {
+    return direct.trim();
+  }
+
+  const seen = new Set<object>();
+  const queue = [data];
+
+  while (queue.length) {
+    const current = queue.shift();
+    if (!current || typeof current !== "object") continue;
+    if (seen.has(current)) continue;
+    seen.add(current);
+
+    for (const [key, value] of Object.entries(current)) {
+      if (typeof value === "string") {
+        const trimmed = value.trim();
+        const isImageData = trimmed.startsWith("data:image/");
+        const isLikelyBase64Png = trimmed.startsWith("iVBORw0KGgo");
+        const isQrField = /qr|base64/i.test(key);
+        if ((isImageData || isLikelyBase64Png) && isQrField) return trimmed;
+      } else if (value && typeof value === "object") {
+        queue.push(value);
+      }
+    }
+  }
+
+  return (
+    data?.qrcode?.code ||
+    data?.code ||
+    data?.data?.qrcode?.code ||
     null
   );
 }
@@ -164,23 +207,11 @@ export async function setEvolutionWebhook(instanceName: string, webhookUrl: stri
   return evolutionRequest<any>(`/webhook/set/${encodeURIComponent(instanceName)}`, {
     method: "POST",
     body: JSON.stringify({
-      webhook: {
-        enabled: true,
-        url: webhookUrl,
-        headers: {},
-        byEvents: false,
-        base64: true,
-        events: [
-          "QRCODE_UPDATED",
-          "CONNECTION_UPDATE",
-          "MESSAGES_UPSERT",
-          "MESSAGES_UPDATE",
-          "MESSAGES_DELETE",
-          "SEND_MESSAGE",
-          "GROUPS_UPSERT",
-          "GROUPS_UPDATE",
-        ],
-      },
+      enabled: true,
+      url: webhookUrl,
+      headers: {},
+      base64: true,
+      events: EVOLUTION_WEBHOOK_EVENTS,
     }),
   });
 }

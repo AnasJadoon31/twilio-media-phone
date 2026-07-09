@@ -44,11 +44,25 @@ export async function POST() {
     }
   }
 
-  await setEvolutionWebhook(instanceName, webhookUrl);
   const connectResult = await connectEvolutionInstance(instanceName);
   const qrCode = extractEvolutionQr(connectResult) || extractEvolutionQr(createResult);
   const connectionStatus = extractEvolutionStatus(connectResult);
-  const providerMetadata = asJson({ lastConnectResult: connectResult });
+  let webhookResult: any = null;
+  let webhookError: string | null = null;
+
+  try {
+    webhookResult = await setEvolutionWebhook(instanceName, webhookUrl);
+  } catch (error) {
+    webhookError = error instanceof Error ? error.message : String(error);
+    console.error("Evolution webhook setup failed", { instanceName, webhookError });
+  }
+
+  const providerMetadata = asJson({
+    lastConnectResult: connectResult,
+    lastCreateResult: createResult,
+    lastWebhookResult: webhookResult,
+    lastWebhookError: webhookError,
+  });
 
   const config = await prisma.channelConfig.upsert({
     where: {
@@ -93,5 +107,7 @@ export async function POST() {
     status: config.connectionStatus,
     qrCode: config.qrCode,
     qrUpdatedAt: config.qrUpdatedAt,
+    webhookConfigured: !webhookError,
+    webhookError,
   });
 }

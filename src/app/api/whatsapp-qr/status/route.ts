@@ -1,7 +1,12 @@
 import prisma from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
 import { requireTenantSession } from "@/lib/tenant-auth";
-import { extractEvolutionQr, extractEvolutionStatus, getEvolutionConnectionState } from "@/lib/evolution";
+import {
+  connectEvolutionInstance,
+  extractEvolutionQr,
+  extractEvolutionStatus,
+  getEvolutionConnectionState,
+} from "@/lib/evolution";
 import { WHATSAPP_QR_CHANNEL } from "@/lib/whatsapp-qr";
 
 export const dynamic = "force-dynamic";
@@ -43,6 +48,21 @@ export async function GET() {
       qrCode = nextQr;
       qrUpdatedAt = new Date();
     }
+
+    if (!qrCode && !["open", "connected", "ready"].includes(String(status).toLowerCase())) {
+      const reconnectResult = await connectEvolutionInstance(config.providerInstanceName);
+      const reconnectQr = extractEvolutionQr(reconnectResult);
+      if (reconnectQr) {
+        qrCode = reconnectQr;
+        qrUpdatedAt = new Date();
+      }
+      connectionState = {
+        connectionState,
+        reconnectResult,
+      };
+      status = extractEvolutionStatus(reconnectResult) || status;
+    }
+
     const previousMetadata =
       typeof config.providerMetadata === "object" && config.providerMetadata && !Array.isArray(config.providerMetadata)
         ? (config.providerMetadata as Record<string, unknown>)
