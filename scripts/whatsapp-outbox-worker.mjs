@@ -133,7 +133,11 @@ async function callCoreAI({ tenant, text, sourceMessageId, metadata }) {
   });
 
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data?.error || data?.detail || `AI Core returned HTTP ${response.status}`);
+  if (!response.ok) {
+    const error = new Error(data?.error || data?.detail || `AI Core returned HTTP ${response.status}`);
+    if ([502, 503, 504].includes(response.status)) error.code = "UPSTREAM_UNAVAILABLE";
+    throw error;
+  }
 
   return {
     replyText: extractReply(data),
@@ -162,9 +166,14 @@ async function loadAudioPayload(payload) {
 async function callVoiceAgent({ tenant, payload, sourceMessageId }) {
   if (!VOICE_AGENT_URL) throw new Error("VOICE_AGENT_URL is required for voice-note processing.");
 
-  const audio = await loadAudioPayload(payload);
   const form = new FormData();
-  form.append("audio", new Blob([audio], { type: payload.mimetype || "audio/ogg" }), payload.fileName || "voice.ogg");
+  if (payload.transcript) {
+    // Retry after AI Core outage: STT already ran, skip re-uploading media.
+    form.append("transcript", payload.transcript);
+  } else {
+    const audio = await loadAudioPayload(payload);
+    form.append("audio", new Blob([audio], { type: payload.mimetype || "audio/ogg" }), payload.fileName || "voice.ogg");
+  }
   form.append("company_slug", tenant.slug);
   form.append("message_id", sourceMessageId);
   form.append("reply_mode", payload.voiceReplyMode || "voice");
@@ -178,7 +187,20 @@ async function callVoiceAgent({ tenant, payload, sourceMessageId }) {
   });
 
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data?.detail || data?.error || `Voice agent returned HTTP ${response.status}`);
+  if (!response.ok) {
+    const detail = data?.detail;
+    const message =
+      (typeof detail === "string" ? detail : detail?.error) ||
+      data?.error ||
+      `Voice agent returned HTTP ${response.status}`;
+    const error = new Error(message);
+    if ([502, 503, 504].includes(response.status)) error.code = "UPSTREAM_UNAVAILABLE";
+    if (typeof detail === "object" && typeof detail?.transcript === "string" && detail.transcript.trim()) {
+      error.transcript = detail.transcript.trim();
+      if (typeof detail.language === "string") error.transcriptLanguage = detail.language;
+    }
+    throw error;
+  }
 
   return {
     status: data.status || "ok",
@@ -247,11 +269,11 @@ async function resolveReplyJid(instanceName, payload) {
 
 function isServiceUnavailable(error) {
   const code = error?.cause?.code || error?.code || "";
-  if (["ECONNREFUSED", "ENOTFOUND", "ETIMEDOUT", "ECONNRESET", "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_HEADERS_TIMEOUT"].includes(code)) {
+  if (["UPSTREAM_UNAVAILABLE", "ECONNREFUSED", "ENOTFOUND", "ETIMEDOUT", "ECONNRESET", "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_HEADERS_TIMEOUT"].includes(code)) {
     return true;
   }
   const message = error instanceof Error ? error.message : String(error);
-  return /fetch failed|is required for|returned HTTP 502|returned HTTP 503|returned HTTP 504/i.test(message);
+  return /fetch failed|is required for|unreachable|unavailable|returned HTTP 502|returned HTTP 503|returned HTTP 504/i.test(message);
 }
 
 async function sendFallbackOnce(job, payload) {
@@ -269,6 +291,14 @@ async function sendFallbackOnce(job, payload) {
 async function deferJob(job, error) {
   const payload = job.payload || {};
 
+  // Voice agent returns the transcript alongside its 503 — persist it so
+  // retries skip STT (and no longer need the media at all).
+  if (error?.transcript && !payload.transcript) {
+    payload.transcript = error.transcript;
+    payload.mediaBase64 = null;
+    console.log(`[whatsapp-worker] stored transcript for job=${job.id} (${payload.transcript.length} chars)`);
+  }
+
   await sendFallbackOnce(job, payload);
 
   await prisma.outboundMessageJob.update({
@@ -285,7 +315,10 @@ async function deferJob(job, error) {
   if (job.messageId) {
     await prisma.message.update({
       where: { id: job.messageId },
-      data: { processingStatus: "deferred" },
+      data: {
+        processingStatus: "deferred",
+        transcript: payload.transcript || undefined,
+      },
     });
   }
 }
