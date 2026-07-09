@@ -207,11 +207,13 @@ export async function setEvolutionWebhook(instanceName: string, webhookUrl: stri
   return evolutionRequest<any>(`/webhook/set/${encodeURIComponent(instanceName)}`, {
     method: "POST",
     body: JSON.stringify({
-      enabled: true,
-      url: webhookUrl,
-      headers: {},
-      base64: true,
-      events: EVOLUTION_WEBHOOK_EVENTS,
+      webhook: {
+        enabled: true,
+        url: webhookUrl,
+        headers: {},
+        base64: true,
+        events: EVOLUTION_WEBHOOK_EVENTS,
+      },
     }),
   });
 }
