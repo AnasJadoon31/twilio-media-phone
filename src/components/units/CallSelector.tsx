@@ -1,13 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Check, ChevronsUpDown, Search, Loader2 } from 'lucide-react';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
 
 interface CallSelectorProps {
     value: string;
     onChange: (callSid: string) => void;
-    aiCoreUrl: string;
-    apiKey: string;
     tenantSlug?: string;
 }
 
@@ -20,7 +16,7 @@ interface Call {
     tenant_slug: string;
 }
 
-export function CallSelector({ value, onChange, aiCoreUrl, apiKey, tenantSlug }: CallSelectorProps) {
+export function CallSelector({ value, onChange, tenantSlug }: CallSelectorProps) {
     const [open, setOpen] = useState(false);
     const [calls, setCalls] = useState<Call[]>([]);
     const [loading, setLoading] = useState(false);
@@ -29,15 +25,9 @@ export function CallSelector({ value, onChange, aiCoreUrl, apiKey, tenantSlug }:
 
     useEffect(() => {
         const fetchCalls = async () => {
-            if (!aiCoreUrl || !apiKey) return;
             setLoading(true);
             try {
-                const response = await fetch(`${aiCoreUrl}/api/v1/calls?limit=100&offset=0`, {
-                    headers: {
-                        'accept': 'application/json',
-                        'x-internal-api-key': apiKey
-                    }
-                });
+                const response = await fetch('/api/operator/voice-calls?limit=100&offset=0', { cache: 'no-store' });
                 if (response.ok) {
                     const data = await response.json();
                     const fetchedCalls = Array.isArray(data) ? data : [];
@@ -53,7 +43,7 @@ export function CallSelector({ value, onChange, aiCoreUrl, apiKey, tenantSlug }:
         if (open && calls.length === 0) {
             fetchCalls();
         }
-    }, [open, aiCoreUrl, apiKey, calls.length, tenantSlug]);
+    }, [open, calls.length, tenantSlug]);
 
     useEffect(() => {
         function handleClickOutside(event: MouseEvent) {

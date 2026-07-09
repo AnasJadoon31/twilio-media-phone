@@ -7,12 +7,10 @@ import { CallSelector } from "./CallSelector";
 interface DiagnosticsDashboardProps {
     data: any;
     onClose: () => void;
-    aiCoreUrl: string;
-    apiKey: string;
     onFetchCall: (callSid: string) => Promise<void>;
 }
 
-export const DiagnosticsDashboard = ({ data, onClose, aiCoreUrl, apiKey, onFetchCall }: DiagnosticsDashboardProps) => {
+export const DiagnosticsDashboard = ({ data, onClose, onFetchCall }: DiagnosticsDashboardProps) => {
     const [expandedTurn, setExpandedTurn] = useState<number | null>(null);
     
     // Always render the dashboard framework so the user can use the search bar
@@ -54,8 +52,6 @@ export const DiagnosticsDashboard = ({ data, onClose, aiCoreUrl, apiKey, onFetch
                         <CallSelector 
                             value={call_id || ""} 
                             onChange={(sid) => onFetchCall(sid)} 
-                            aiCoreUrl={aiCoreUrl} 
-                            apiKey={apiKey} 
                         />
                     </div>
                     <Button onClick={onClose} className="bg-red-600 hover:bg-red-700 text-white border-red-500 shadow-md">

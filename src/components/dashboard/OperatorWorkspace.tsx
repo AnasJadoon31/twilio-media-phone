@@ -156,9 +156,6 @@ const CHANNEL_META: Record<ChannelId, { label: string; short: string; className:
   },
 };
 
-const aiCoreUrl = (process.env.NEXT_PUBLIC_AI_CORE_URL || "https://api.operaios.qzz.io").replace(/\/$/, "");
-const apiKey = "dev-secret";
-
 function formatTime(value: string | null) {
   if (!value) return "No activity";
   return new Date(value).toLocaleString();
@@ -230,18 +227,13 @@ export function OperatorWorkspace() {
 
     setLoadingCalls(true);
     try {
-      const response = await fetch(`${aiCoreUrl}/api/v1/calls?limit=50&offset=0`, {
-        headers: {
-          accept: "application/json",
-          "x-internal-api-key": apiKey,
-        },
-      });
+      const response = await fetch("/api/operator/voice-calls?limit=50&offset=0", { cache: "no-store" });
 
       if (!response.ok) return;
 
       const data = await response.json();
       const calls = Array.isArray(data) ? data : [];
-      setVoiceCalls(calls.filter((call) => call.tenant_slug === tenantSlug));
+      setVoiceCalls(calls);
     } catch (err) {
       console.error("Failed to fetch voice calls", err);
     } finally {

@@ -101,8 +101,6 @@ export const MediaPhone = ({ tenantSlug, embedded = false, compact = false }: Me
     const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(!compact);
 
     // Diagnostics State
-    const [aiCoreUrl, setAiCoreUrl] = useState<string>(process.env.NEXT_PUBLIC_AI_CORE_URL || "https://api.operaios.qzz.io");
-    const [apiKey, setApiKey] = useState<string>("dev-secret");
     const [diagnosticCallSid, setDiagnosticCallSid] = useState<string>("");
     const [isFetchingDiagnostics, setIsFetchingDiagnostics] = useState<boolean>(false);
     const [showDiagnosticsPage, setShowDiagnosticsPage] = useState<boolean>(false);
@@ -116,15 +114,9 @@ export const MediaPhone = ({ tenantSlug, embedded = false, compact = false }: Me
     };
 
     const fetchCallHistory = async (offset: number = 0) => {
-        if (!aiCoreUrl || !apiKey) return;
         setIsFetchingHistory(true);
         try {
-            const response = await fetch(`${aiCoreUrl}/api/v1/calls?limit=50&offset=${offset}`, {
-                headers: {
-                    'accept': 'application/json',
-                    'x-internal-api-key': apiKey
-                }
-            });
+            const response = await fetch(`/api/operator/voice-calls?limit=50&offset=${offset}`, { cache: 'no-store' });
             if (response.ok) {
                 const data = await response.json();
                 const calls = Array.isArray(data) ? data : [];
@@ -150,52 +142,48 @@ export const MediaPhone = ({ tenantSlug, embedded = false, compact = false }: Me
         try {
             (() => { setPendingResumeCallId(null); setPendingResumeTenantSlug(null); })();
             setPendingResumeTenantSlug(null);
-            
+
             // Reconstruct logs from diagnostics endpoint
-            if (aiCoreUrl && apiKey) {
-                if (tenantSlug) {
-                    setUrl(prevUrl => prevUrl.replace(/\/voice\/[^\/]+$/, `/voice/${tenantSlug}`));
-                }
-                const response = await fetch(`${aiCoreUrl.replace(/\/$/, '')}/api/v1/call/${callSid}/diagnostics`, {
-                    headers: { 'x-internal-api-key': apiKey }
-                });
-                
-                if (response.ok) {
-                    const data = await response.json();
-                    const turns = data?.turn_diagnostics || [];
-                    
-                    // Clear existing logs and insert history
-                    const newLogs: LogEntry[] = turns.flatMap((turn: any, index: number) => {
-                        const logs: LogEntry[] = [];
-                        if (turn.caller_text_original) {
-                            logs.push({
-                                id: `stt_${index}`,
-                                timestamp: new Date(turn.timestamp).toLocaleTimeString(),
-                                message: turn.caller_text_original,
-                                type: 'success',
-                                category: 'transcription',
-                                rawText: turn.caller_text_original
-                            });
-                        }
-                        if (turn.response_text) {
-                            logs.push({
-                                id: `ai_${index}`,
-                                timestamp: new Date(turn.timestamp).toLocaleTimeString(),
-                                message: turn.response_text,
-                                type: 'info',
-                                category: 'ai_response',
-                                rawText: turn.response_text,
-                                backendLatencyMs: turn.routing_latency_ms,
-                                totalLatencyMs: turn.total_latency_ms
-                            });
-                        }
-                        return logs;
-                    });
-                    
-                    setLogs(newLogs);
-                }
+            if (tenantSlug) {
+                setUrl(prevUrl => prevUrl.replace(/\/voice\/[^\/]+$/, `/voice/${tenantSlug}`));
             }
-            
+            const response = await fetch(`/api/operator/voice-calls/${encodeURIComponent(callSid)}/diagnostics`, { cache: 'no-store' });
+
+            if (response.ok) {
+                const data = await response.json();
+                const turns = data?.turn_diagnostics || [];
+
+                // Clear existing logs and insert history
+                const newLogs: LogEntry[] = turns.flatMap((turn: any, index: number) => {
+                    const logs: LogEntry[] = [];
+                    if (turn.caller_text_original) {
+                        logs.push({
+                            id: `stt_${index}`,
+                            timestamp: new Date(turn.timestamp).toLocaleTimeString(),
+                            message: turn.caller_text_original,
+                            type: 'success',
+                            category: 'transcription',
+                            rawText: turn.caller_text_original
+                        });
+                    }
+                    if (turn.response_text) {
+                        logs.push({
+                            id: `ai_${index}`,
+                            timestamp: new Date(turn.timestamp).toLocaleTimeString(),
+                            message: turn.response_text,
+                            type: 'info',
+                            category: 'ai_response',
+                            rawText: turn.response_text,
+                            backendLatencyMs: turn.routing_latency_ms,
+                            totalLatencyMs: turn.total_latency_ms
+                        });
+                    }
+                    return logs;
+                });
+
+                setLogs(newLogs);
+            }
+
             // Initiate connection with existing sid
             await _connectToCall(callSid, tenantSlug);
         } catch (err) {
@@ -282,20 +270,12 @@ export const MediaPhone = ({ tenantSlug, embedded = false, compact = false }: Me
             addLog('No Call SID available to fetch diagnostics.', 'error', 'error');
             return;
         }
-        if (!aiCoreUrl) {
-            addLog('AI Core URL is required to fetch diagnostics.', 'error', 'error');
-            return;
-        }
 
         setIsFetchingDiagnostics(true);
         addLog(`Fetching diagnostics for Call SID: ${targetSid}...`, 'info', 'diagnostic');
 
         try {
-            const response = await fetch(`${aiCoreUrl.replace(/\/$/, '')}/api/v1/call/${targetSid}/diagnostics`, {
-                headers: {
-                    'x-internal-api-key': apiKey
-                }
-            });
+            const response = await fetch(`/api/operator/voice-calls/${encodeURIComponent(targetSid)}/diagnostics`, { cache: 'no-store' });
 
             if (!response.ok) {
                 throw new Error(`Server returned ${response.status}`);
@@ -1169,15 +1149,11 @@ export const MediaPhone = ({ tenantSlug, embedded = false, compact = false }: Me
                         <div className="space-y-3">
                             <Label className="text-xs text-neutral-500 uppercase">Diagnostics Fetcher</Label>
                             <div className="space-y-2">
-                                <Input size={1} placeholder="AI Core URL" className="h-8 text-xs bg-neutral-900 text-neutral-300 border-neutral-800" value={aiCoreUrl} onChange={e => setAiCoreUrl(e.target.value)} />
-                                <Input type="password" size={1} placeholder="API Key" className="h-8 text-xs bg-neutral-900 text-neutral-300 border-neutral-800" value={apiKey} onChange={e => setApiKey(e.target.value)} />
                                 <div className="flex gap-2 items-center">
                                     <div className="flex-1">
                                         <CallSelector 
                                             value={diagnosticCallSid} 
                                             onChange={(val) => setDiagnosticCallSid(val)}
-                                            aiCoreUrl={aiCoreUrl}
-                                            apiKey={apiKey}
                                             tenantSlug={tenantSlug}
                                         />
                                     </div>
@@ -1355,8 +1331,6 @@ export const MediaPhone = ({ tenantSlug, embedded = false, compact = false }: Me
                 <DiagnosticsDashboard 
                     data={[...logs].reverse().find(l => l.category === 'diagnostic')?.details || null}
                     onClose={() => setShowDiagnosticsPage(false)} 
-                    aiCoreUrl={aiCoreUrl}
-                    apiKey={apiKey}
                     onFetchCall={async (sid) => {
                         await fetchDiagnostics(sid);
                     }}
