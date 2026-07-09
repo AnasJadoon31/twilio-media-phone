@@ -11,6 +11,8 @@ const AI_CORE_API_KEY = process.env.AI_CORE_API_KEY || "dev-secret";
 const VOICE_AGENT_URL = process.env.VOICE_AGENT_URL?.replace(/\/$/, "");
 const POLL_INTERVAL_MS = Number(process.env.WHATSAPP_OUTBOX_POLL_INTERVAL_MS || 2500);
 const JOB_BATCH_SIZE = Number(process.env.WHATSAPP_OUTBOX_BATCH_SIZE || 5);
+const FALLBACK_REPLY = process.env.WHATSAPP_FALLBACK_REPLY || "We will contact you back soon.";
+const DEFER_RETRY_MS = Number(process.env.WHATSAPP_DEFER_RETRY_MS || 60_000);
 
 if (!DATABASE_URL) throw new Error("DATABASE_URL is required.");
 if (!EVOLUTION_API_URL) throw new Error("EVOLUTION_API_URL is required.");
@@ -212,6 +214,47 @@ async function createOutboundMessage({ job, sourceMessage, payload, replyText, p
   });
 }
 
+function isServiceUnavailable(error) {
+  const code = error?.cause?.code || error?.code || "";
+  if (["ECONNREFUSED", "ENOTFOUND", "ETIMEDOUT", "ECONNRESET", "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_HEADERS_TIMEOUT"].includes(code)) {
+    return true;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  return /fetch failed|is required for|returned HTTP 502|returned HTTP 503|returned HTTP 504/i.test(message);
+}
+
+async function deferJob(job, error) {
+  const payload = job.payload || {};
+
+  if (!payload.fallbackSent && payload.instanceName && payload.chatId) {
+    try {
+      await sendText(payload.instanceName, payload.chatId, FALLBACK_REPLY);
+      payload.fallbackSent = true;
+      console.log(`[whatsapp-worker] sent fallback reply job=${job.id}`);
+    } catch (sendError) {
+      console.error(`[whatsapp-worker] fallback send failed job=${job.id}`, sendError);
+    }
+  }
+
+  await prisma.outboundMessageJob.update({
+    where: { id: job.id },
+    data: {
+      status: "retry",
+      lockedAt: null,
+      nextRunAt: new Date(Date.now() + DEFER_RETRY_MS),
+      lastError: `deferred (upstream unavailable): ${error instanceof Error ? error.message : String(error)}`,
+      payload,
+    },
+  });
+
+  if (job.messageId) {
+    await prisma.message.update({
+      where: { id: job.messageId },
+      data: { processingStatus: "deferred" },
+    });
+  }
+}
+
 async function markRetry(job, error) {
   const attempts = job.attempts + 1;
   const dead = attempts >= job.maxAttempts;
@@ -375,8 +418,13 @@ async function tick() {
       await processJob(job);
       console.log(`[whatsapp-worker] sent job=${job.id}`);
     } catch (error) {
-      console.error(`[whatsapp-worker] failed job=${job.id}`, error);
-      await markRetry(job, error);
+      if (isServiceUnavailable(error)) {
+        console.warn(`[whatsapp-worker] deferred job=${job.id} (upstream unavailable): ${error?.message || error}`);
+        await deferJob(job, error);
+      } else {
+        console.error(`[whatsapp-worker] failed job=${job.id}`, error);
+        await markRetry(job, error);
+      }
     }
   }
 }
