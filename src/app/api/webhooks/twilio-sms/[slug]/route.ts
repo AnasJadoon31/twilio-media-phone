@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { createMessageWithContact } from "@/lib/operator";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -41,16 +42,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
       );
     }
 
-    await prisma.message.create({
-      data: {
-        tenantId: tenant.id,
-        channelType: "twilio_sms",
-        direction: "inbound",
-        content: messageText,
-        senderId,
-        receiverId,
-        externalMessageId: externalMessageId || undefined
-      }
+    await createMessageWithContact({
+      tenantId: tenant.id,
+      channelType: "twilio_sms",
+      direction: "inbound",
+      content: messageText,
+      senderId,
+      receiverId,
+      externalMessageId: externalMessageId || undefined
     });
 
     const aiResponse = await fetch("https://api.operaios.qzz.io/api/v1/call/interact", {
@@ -73,15 +72,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
       aiReplyText = data.reply || data.response_text || data.text || aiReplyText;
     }
 
-    await prisma.message.create({
-      data: {
-        tenantId: tenant.id,
-        channelType: "twilio_sms",
-        direction: "outbound",
-        content: aiReplyText,
-        senderId: receiverId,
-        receiverId: senderId
-      }
+    await createMessageWithContact({
+      tenantId: tenant.id,
+      channelType: "twilio_sms",
+      direction: "outbound",
+      content: aiReplyText,
+      senderId: receiverId,
+      receiverId: senderId
     });
 
     const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${aiReplyText}</Message></Response>`;

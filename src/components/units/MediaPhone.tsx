@@ -44,6 +44,7 @@ type QueuedAudioItem = {
 type MediaPhoneProps = {
     tenantSlug?: string;
     embedded?: boolean;
+    compact?: boolean;
 };
 
 const voiceAgentBaseUrl = (process.env.NEXT_PUBLIC_VOICE_AGENT_URL || "https://voice-agent.anas31.qzz.io").replace(/\/$/, "");
@@ -69,7 +70,7 @@ const ThinkingBubble = () => {
     return <span>{phrases[phraseIndex]}{dots}</span>;
 }
 
-export const MediaPhone = ({ tenantSlug, embedded = false }: MediaPhoneProps) => {
+export const MediaPhone = ({ tenantSlug, embedded = false, compact = false }: MediaPhoneProps) => {
     const scopedTenantSlug = tenantSlug || "acme-corp";
     const defaultVoiceUrl = `${voiceAgentBaseUrl}/voice/${scopedTenantSlug}`;
     const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -97,7 +98,7 @@ export const MediaPhone = ({ tenantSlug, embedded = false }: MediaPhoneProps) =>
     const [pendingResumeTenantSlug, setPendingResumeTenantSlug] = useState<string | null>(null);
     const lastSttTimestampRef = useRef<number | null>(null);
     const [panelWidth, setPanelWidth] = useState(450);
-    const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
+    const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(!compact);
 
     // Diagnostics State
     const [aiCoreUrl, setAiCoreUrl] = useState<string>(process.env.NEXT_PUBLIC_AI_CORE_URL || "https://api.operaios.qzz.io");
@@ -929,9 +930,11 @@ export const MediaPhone = ({ tenantSlug, embedded = false }: MediaPhoneProps) =>
 
     return (
         <div 
-            className={embedded
-                ? "flex h-[760px] min-h-[640px] w-full bg-neutral-950 text-neutral-50 font-sans overflow-hidden rounded-2xl border border-white/10"
-                : "flex h-screen w-screen max-h-screen bg-neutral-950 text-neutral-50 font-sans overflow-hidden"
+            className={compact
+                ? "flex h-[430px] min-h-[360px] w-full bg-neutral-950 text-neutral-50 font-sans overflow-hidden rounded-lg border border-white/10"
+                : embedded
+                    ? "flex h-[760px] min-h-[640px] w-full bg-neutral-950 text-neutral-50 font-sans overflow-hidden rounded-2xl border border-white/10"
+                    : "flex h-screen w-screen max-h-screen bg-neutral-950 text-neutral-50 font-sans overflow-hidden"
             }
             onMouseMove={(e) => {
                 if (isDisconnecting.current && (e.buttons & 1)) {
@@ -948,7 +951,7 @@ export const MediaPhone = ({ tenantSlug, embedded = false }: MediaPhoneProps) =>
                 <div className="flex items-center justify-between p-4 border-b border-neutral-800 bg-neutral-900/50 backdrop-blur-md">
                     <div className="flex items-center gap-3">
                         <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-red-500'}`} />
-                        <h1 className="font-semibold text-lg tracking-tight">Voice Agent interaction</h1>
+                        <h1 className="font-semibold text-lg tracking-tight">{compact ? "Voice controls" : "Voice Agent interaction"}</h1>
                         <Badge variant="outline" className="ml-2 border-neutral-700 text-neutral-400">
                             {isConnected ? 'Connected' : 'Disconnected'}
                         </Badge>

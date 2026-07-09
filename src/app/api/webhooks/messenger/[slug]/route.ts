@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { createMessageWithContact } from "@/lib/operator";
 
 const GRAPH_API_VERSION = process.env.META_GRAPH_API_VERSION || "v23.0";
 
@@ -62,16 +63,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
       return new NextResponse("EVENT_RECEIVED", { status: 200 });
     }
 
-    await prisma.message.create({
-      data: {
-        tenantId: tenant.id,
-        channelType: "messenger",
-        direction: "inbound",
-        content: messageText,
-        senderId,
-        receiverId,
-        externalMessageId
-      }
+    await createMessageWithContact({
+      tenantId: tenant.id,
+      channelType: "messenger",
+      direction: "inbound",
+      content: messageText,
+      senderId,
+      receiverId,
+      externalMessageId
     });
 
     const aiResponse = await fetch("https://api.operaios.qzz.io/api/v1/call/interact", {
@@ -94,15 +93,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
       aiReplyText = data.reply || data.response_text || data.text || aiReplyText;
     }
 
-    await prisma.message.create({
-      data: {
-        tenantId: tenant.id,
-        channelType: "messenger",
-        direction: "outbound",
-        content: aiReplyText,
-        senderId: receiverId,
-        receiverId: senderId
-      }
+    await createMessageWithContact({
+      tenantId: tenant.id,
+      channelType: "messenger",
+      direction: "outbound",
+      content: aiReplyText,
+      senderId: receiverId,
+      receiverId: senderId
     });
 
     if (config.accessToken && config.pageId) {

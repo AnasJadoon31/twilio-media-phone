@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { createMessageWithContact } from "@/lib/operator";
 
 const GRAPH_API_VERSION = process.env.META_GRAPH_API_VERSION || "v23.0";
 const WHATSAPP_TEXT_LIMIT = 4096;
@@ -136,16 +137,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
     }
 
     // Save inbound message
-    await prisma.message.create({
-      data: {
-        tenantId: tenant.id,
-        channelType: "whatsapp",
-        direction: "inbound",
-        content: messageText,
-        senderId,
-        receiverId,
-        externalMessageId
-      }
+    await createMessageWithContact({
+      tenantId: tenant.id,
+      channelType: "whatsapp",
+      direction: "inbound",
+      content: messageText,
+      senderId,
+      receiverId,
+      externalMessageId
     });
 
     let aiReplyText = "I'm sorry, I couldn't process that request right now.";
@@ -188,16 +187,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
     }
 
     // Save outbound message after the Meta API attempt so the dashboard reflects the real send status.
-    await prisma.message.create({
-      data: {
-        tenantId: tenant.id,
-        channelType: "whatsapp",
-        direction: "outbound",
-        content: aiReplyText,
-        senderId: receiverId,
-        receiverId: senderId,
-        externalMessageId: sendResult.ok ? sendResult.messageId || "sent:accepted" : outboundFailureId(sendResult)
-      }
+    await createMessageWithContact({
+      tenantId: tenant.id,
+      channelType: "whatsapp",
+      direction: "outbound",
+      content: aiReplyText,
+      senderId: receiverId,
+      receiverId: senderId,
+      externalMessageId: sendResult.ok ? sendResult.messageId || "sent:accepted" : outboundFailureId(sendResult)
     });
 
     return new NextResponse("EVENT_RECEIVED", { status: 200 });

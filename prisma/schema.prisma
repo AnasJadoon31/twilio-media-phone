@@ -17,6 +17,9 @@ model Tenant {
   
   channelConfigs ChannelConfig[]
   messages       Message[]
+  contactProfiles ContactProfile[]
+  contacts        Contact[]
+  notifications   Notification[]
 }
 
 model ChannelConfig {
@@ -43,6 +46,7 @@ model ChannelConfig {
 model Message {
   id               String   @id @default(uuid())
   tenantId         String
+  contactId        String?
   channelType      String   // "whatsapp", "instagram", "messenger", "twilio_sms"
   direction        String   // "inbound" or "outbound"
   content          String
@@ -55,4 +59,72 @@ model Message {
   createdAt        DateTime @default(now())
   
   tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact          Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, channelType, createdAt])
+  @@index([contactId])
+}
+
+model ContactProfile {
+  id          String   @id @default(uuid())
+  tenantId    String
+  displayName String?
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contacts      Contact[]
+  notifications Notification[]
+
+  @@index([tenantId])
+}
+
+model Contact {
+  id          String   @id @default(uuid())
+  tenantId    String
+  profileId   String
+  channelType String
+  externalId  String
+  displayName String?
+  lastReadAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant        Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  profile       ContactProfile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  messages      Message[]
+  notifications Notification[]
+
+  @@unique([tenantId, channelType, externalId])
+  @@index([tenantId, profileId])
+  @@index([tenantId, channelType])
+}
+
+model Notification {
+  id          String   @id @default(uuid())
+  tenantId    String
+  profileId   String?
+  contactId   String?
+  type        String
+  channelType String?
+  title       String
+  body        String
+  severity    String   @default("info")
+  sourceType  String?
+  sourceId    String?
+  metadata    Json?
+  readAt      DateTime?
+  dismissedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant  Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  profile ContactProfile? @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  contact Contact?        @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, sourceType, sourceId])
+  @@index([tenantId, dismissedAt, createdAt])
+  @@index([tenantId, readAt])
 }
