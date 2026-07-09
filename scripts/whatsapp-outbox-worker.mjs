@@ -228,7 +228,7 @@ async function deferJob(job, error) {
 
   if (!payload.fallbackSent && payload.instanceName && payload.chatId) {
     try {
-      await sendText(payload.instanceName, payload.chatId, FALLBACK_REPLY);
+      await sendText(payload.instanceName, payload.replyJid || payload.chatId, FALLBACK_REPLY);
       payload.fallbackSent = true;
       console.log(`[whatsapp-worker] sent fallback reply job=${job.id}`);
     } catch (sendError) {
@@ -294,6 +294,7 @@ async function processJob(job) {
   const instanceName = payload.instanceName || config?.providerInstanceName;
   if (!instanceName) throw new Error("WhatsApp QR instance name is missing.");
   if (!payload.chatId) throw new Error("WhatsApp chat id is missing.");
+  const replyJid = payload.replyJid || payload.chatId;
 
   const sourceMessage = job.message;
   let replyText = "";
@@ -315,7 +316,7 @@ async function processJob(job) {
     replyText = result.replyText;
     if (!replyText) throw new Error("AI Core returned no reply text.");
 
-    const sendResult = await sendText(instanceName, payload.chatId, replyText);
+    const sendResult = await sendText(instanceName, replyJid, replyText);
     providerMessageId = extractProviderMessageId(sendResult);
     await createOutboundMessage({ job, sourceMessage, payload, replyText, providerMessageId, mediaType: null });
   } else if (job.jobType === "whatsapp_qr_voice_reply") {
@@ -331,13 +332,13 @@ async function processJob(job) {
     if (result.status === "no_speech") {
       finalProcessingStatus = "no_speech";
     } else if ((mode === "text" || mode === "both") && replyText) {
-      const sendResult = await sendText(instanceName, payload.chatId, replyText);
+      const sendResult = await sendText(instanceName, replyJid, replyText);
       providerMessageId = extractProviderMessageId(sendResult) || providerMessageId;
       await createOutboundMessage({ job, sourceMessage, payload, replyText, providerMessageId, mediaType: null });
     }
 
     if (result.status !== "no_speech" && (mode === "voice" || mode === "both") && result.audioBase64) {
-      const sendResult = await sendAudio(instanceName, payload.chatId, result.audioBase64, result.audioMime);
+      const sendResult = await sendAudio(instanceName, replyJid, result.audioBase64, result.audioMime);
       providerMessageId = extractProviderMessageId(sendResult) || providerMessageId;
       await createOutboundMessage({
         job,

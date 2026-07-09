@@ -11,6 +11,7 @@ type NormalizedEvolutionMessage = {
   messageId: string;
   fromMe: boolean;
   chatId: string;
+  replyJid: string;
   participantId: string | null;
   isGroup: boolean;
   content: string;
@@ -135,6 +136,11 @@ export function normalizeEvolutionMessage(body: any): NormalizedEvolutionMessage
     data?.instanceName ||
     "";
   const chatId = key?.remoteJid || data?.remoteJid || data?.chatId || data?.jid || "";
+  // LID-mode contacts must be replied to via their @lid JID; sends addressed to
+  // the resolved phone-number JID are rejected by WhatsApp with status ERROR.
+  const remoteJidAlt = key?.remoteJidAlt || data?.remoteJidAlt || "";
+  const replyJid =
+    [chatId, remoteJidAlt].find((jid) => typeof jid === "string" && jid.endsWith("@lid")) || chatId;
   const participantId = key?.participant || data?.participant || data?.participantId || null;
   const messageId = key?.id || data?.id || data?.messageId || data?.key?.id || "";
   const fromMe = Boolean(key?.fromMe || data?.fromMe);
@@ -149,6 +155,7 @@ export function normalizeEvolutionMessage(body: any): NormalizedEvolutionMessage
     messageId,
     fromMe,
     chatId,
+    replyJid,
     participantId,
     isGroup: chatId.endsWith("@g.us"),
     content: getTextFromMessage(message),
@@ -263,6 +270,7 @@ export async function createQrReplyJob({
       payload: {
         instanceName: config.providerInstanceName,
         chatId: normalized.chatId,
+        replyJid: normalized.replyJid,
         groupId: normalized.isGroup ? normalized.chatId : null,
         participantId: normalized.participantId,
         messageId: normalized.messageId,
