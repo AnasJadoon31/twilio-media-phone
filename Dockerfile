@@ -48,9 +48,9 @@ RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
 # Copy standalone output and public files
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/package.json ./package.json
-COPY --from=builder /app/pnpm-lock.yaml ./pnpm-lock.yaml
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
+COPY --from=builder --chown=nextjs:nodejs /app/pnpm-lock.yaml ./pnpm-lock.yaml
 
 # Install production dependencies so Prisma CLI is available for startup schema sync.
 RUN pnpm install --prod --frozen-lockfile
@@ -70,8 +70,7 @@ ENV HOSTNAME "0.0.0.0"
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=nextjs:nodejs /app/prisma.config.ts ./prisma.config.ts
 COPY --from=builder --chown=nextjs:nodejs /app/scripts ./scripts
-COPY --from=builder --chown=nextjs:nodejs /app/docker-entrypoint.sh ./docker-entrypoint.sh
-RUN chmod +x /app/docker-entrypoint.sh && chown -R nextjs:nodejs /app
+COPY --from=builder --chown=nextjs:nodejs --chmod=755 /app/docker-entrypoint.sh ./docker-entrypoint.sh
 
 USER nextjs
 
