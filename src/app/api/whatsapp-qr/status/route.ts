@@ -81,7 +81,18 @@ export async function GET() {
       },
     });
   } catch (error) {
-    status = config.connectionStatus || "unknown";
+    const message = error instanceof Error ? error.message : String(error);
+    if (/does not exist|not found/i.test(message)) {
+      status = "disconnected";
+      qrCode = null;
+      qrUpdatedAt = null;
+      await prisma.channelConfig.update({
+        where: { id: config.id },
+        data: { connectionStatus: status, qrCode, qrUpdatedAt },
+      });
+    } else {
+      status = config.connectionStatus || "unknown";
+    }
   }
 
   const groups = await prisma.whatsAppGroupSetting.findMany({
