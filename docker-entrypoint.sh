@@ -9,7 +9,7 @@ fi
 attempt=1
 max_attempts="${PRISMA_DB_PUSH_MAX_ATTEMPTS:-20}"
 
-until pnpm exec prisma db push --accept-data-loss; do
+until ./node_modules/.bin/prisma db push --accept-data-loss; do
   if [ "$attempt" -ge "$max_attempts" ]; then
     echo "Prisma schema sync failed after ${attempt} attempts."
     exit 1
