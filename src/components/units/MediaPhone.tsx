@@ -563,11 +563,13 @@ export const MediaPhone = ({ tenantSlug, embedded = false, compact = false }: Me
         console.log('[WS] Connecting to:', streamUri);
 
         return new Promise((resolve, reject) => {
+            let settled = false;
             let connectionTimeout: ReturnType<typeof setTimeout> | null = setTimeout(() => {
                 connectionTimeout = null;
-                if (wsRef.current && wsRef.current.readyState !== WebSocket.OPEN) {
+                if (!settled && wsRef.current && wsRef.current.readyState !== WebSocket.OPEN) {
                     const state = wsRef.current.readyState;
                     addLog(`Connection timed out after 30s (readyState=${state})`, 'error');
+                    settled = true;
                     wsRef.current.close();
                     reject(new Error("Connection timeout"));
                 }
@@ -581,6 +583,8 @@ export const MediaPhone = ({ tenantSlug, embedded = false, compact = false }: Me
 
             // Let server know we are ready to start the call
             setTimeout(() => {
+                if (settled) return;
+                settled = true;
                 _sendMessageToClient(
                     'connected',
                     {
@@ -599,7 +603,6 @@ export const MediaPhone = ({ tenantSlug, embedded = false, compact = false }: Me
             console.log(`[WS] Closed — code=${event.code} reason="${event.reason}" wasClean=${event.wasClean}`);
 
             if (isDisconnecting.current) {
-                // User-initiated disconnect
                 addLog(`🔌 Disconnected by user`, 'info');
             } else if (event.code === 4001) {
                 addLog(`🔒 Disconnected: authentication failed (bad token)`, 'error');
@@ -618,7 +621,11 @@ export const MediaPhone = ({ tenantSlug, embedded = false, compact = false }: Me
                     audioContextRef.current = null;
                 } catch (_) { }
             }
-            reject(new Error("WebSocket closed before connection could establish"));
+            // Only reject if the connection never established (open handler didn't settle yet)
+            if (!settled) {
+                settled = true;
+                reject(new Error("WebSocket closed before connection could be established"));
+            }
         })
 
         wsRef.current.addEventListener("message", _handleWebSocketMessage)
@@ -627,9 +634,11 @@ export const MediaPhone = ({ tenantSlug, embedded = false, compact = false }: Me
             setIsAiThinking(false);
             if (connectionTimeout) { clearTimeout(connectionTimeout); connectionTimeout = null; }
             console.error('[WS] Error event — full details:', error);
-            // The error event carries no useful info itself; the close event will follow with the actual code.
             addLog(`WebSocket error — close event will follow with details`, 'error');
-            reject(new Error("WebSocket error"));
+            if (!settled) {
+                settled = true;
+                reject(new Error("WebSocket error"));
+            }
         })
         })
     }

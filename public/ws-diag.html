@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>WS Diag</title></head>
+<body>
+<h2>WebSocket Diagnostic</h2>
+<pre id="log"></pre>
+<script>
+const log = (msg) => document.getElementById('log').appendChild(document.createTextNode(msg + '\n'));
+
+(async () => {
+  const TENANT = 'acme-corp';
+  const VOICE_AGENT = 'https://voice-agent.anas31.qzz.io';
+  const callSid = 'CA-diag-' + Math.random().toString(36).substring(2, 9);
+
+  // Step 1: POST to get TwiML
+  log('Step 1: POST ' + VOICE_AGENT + '/voice/' + TENANT);
+  try {
+    const resp = await fetch(VOICE_AGENT + '/voice/' + TENANT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        CallSid: callSid, Caller: '+441234567890', Called: '+44987654321',
+        CallStatus: 'in-progress', Direction: 'inbound'
+      })
+    });
+    const twiml = await resp.text();
+    log('Step 1: OK - TwiML received (' + twiml.length + ' chars)');
+
+    // Step 2: Extract WebSocket URL
+    const parser = new DOMParser();
+    const xmlDoc = parser.parseFromString(twiml, 'text/xml');
+    const streamEl = xmlDoc.querySelector('Stream');
+    if (!streamEl) { log('ERROR: No Stream element! ' + twiml.substring(0,200)); return; }
+
+    const streamUrl = streamEl.getAttribute('url');
+    log('Step 2: Stream URL decoded → ' + streamUrl);
+
+    // Step 3: Open WebSocket
+    log('Step 3: Opening WebSocket...');
+    const ws = new WebSocket(streamUrl);
+    
+    ws.onopen = () => {
+      log('Step 3: WebSocket OPEN (readyState=' + ws.readyState + ')');
+      
+      // Step 4: Send start event (same as MediaPhone)
+      setTimeout(() => {
+        const msg = JSON.stringify({
+          event: 'start',
+          sequenceNumber: 1,
+          start: {
+            streamSid: 'MZ-diag-' + Math.random().toString(36).substring(2, 9),
+            callSid: callSid,
+            tracks: ['inbound', 'outbound'],
+            mediaFormat: { encoding: 'audio/x-mulaw', sampleRate: 8000, channels: 1 }
+          },
+          streamSid: 'MZ-diag-test'
+        });
+        log('Step 4: Sending start event → ' + msg.substring(0,100) + '...');
+        ws.send(msg);
+        log('Step 4: start event SENT');
+      }, 500);
+    };
+
+    ws.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        log('← Server: ' + data.event + ' | ' + JSON.stringify(data).substring(0, 150));
+      } catch {
+        log('← Server: (non-JSON) ' + e.data.substring(0, 100));
+      }
+    };
+
+    ws.onclose = (e) => {
+      log('WebSocket CLOSED: code=' + e.code + ' reason="' + e.reason + '" wasClean=' + e.wasClean);
+    };
+
+    ws.onerror = (e) => {
+      log('WebSocket ERROR (see console)');
+      console.error('WS error:', e);
+    };
+
+  } catch (e) {
+    log('FAILED: ' + e.message);
+  }
+})();
+</script>
+</body>
+</html>
