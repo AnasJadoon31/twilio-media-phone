@@ -1,20 +1,46 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { Building2, KeyRound, Loader2, Plus, RefreshCw } from "lucide-react";
+import { Building2, KeyRound, Loader2, Plus, RefreshCw, ServerCog } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 type ClientTenant = {
   id: string;
   name: string;
   slug: string;
   email: string;
+  coreAiApiId: string | null;
+  coreAiApi: {
+    id: string;
+    name: string;
+    baseUrl: string;
+    isActive: boolean;
+  } | null;
   createdAt: string;
   channelCount?: number;
   messageCount?: number;
 };
+
+type CoreAiApi = {
+  id: string;
+  name: string;
+  baseUrl: string;
+  apiKey: string;
+  hasApiKey: boolean;
+  isActive: boolean;
+  tenantCount?: number;
+};
+
+const DEFAULT_AI_SERVER_VALUE = "__default__";
 
 const slugify = (value: string) =>
   value
@@ -32,8 +58,12 @@ const generatePassword = () => {
 
 export function ClientManager() {
   const [clients, setClients] = useState<ClientTenant[]>([]);
+  const [aiServers, setAiServers] = useState<CoreAiApi[]>([]);
   const [loading, setLoading] = useState(true);
+  const [serversLoading, setServersLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [serverSaving, setServerSaving] = useState(false);
+  const [selectionSaving, setSelectionSaving] = useState<Record<string, boolean>>({});
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [form, setForm] = useState({
@@ -41,6 +71,12 @@ export function ClientManager() {
     slug: "",
     email: "",
     password: "",
+    coreAiApiId: "",
+  });
+  const [serverForm, setServerForm] = useState({
+    name: "",
+    baseUrl: "",
+    apiKey: "",
   });
 
   const voiceBaseUrl = (process.env.NEXT_PUBLIC_VOICE_AGENT_URL || "https://voice-agent.anas31.qzz.io").replace(/\/$/, "");
@@ -63,8 +99,25 @@ export function ClientManager() {
     }
   };
 
+  const fetchAiServers = async () => {
+    setServersLoading(true);
+    try {
+      const res = await fetch("/api/core-ai-apis", { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to load AI servers");
+      }
+      setAiServers(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load AI servers");
+    } finally {
+      setServersLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchClients();
+    fetchAiServers();
   }, []);
 
   const updateField = (field: keyof typeof form, value: string) => {
@@ -95,19 +148,74 @@ export function ClientManager() {
         body: JSON.stringify({
           ...form,
           slug: form.slug || suggestedSlug,
+          coreAiApiId: form.coreAiApiId || null,
         }),
       });
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data?.error || "Failed to create client");
       }
-      setForm({ name: "", slug: "", email: "", password: "" });
+      setForm({ name: "", slug: "", email: "", password: "", coreAiApiId: "" });
       setSuccess(`Created ${data.name}. Initial password: ${initialPassword}. Use slug "${data.slug}" in webhook URLs.`);
       await fetchClients();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create client");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const createAiServer = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setServerSaving(true);
+    setError("");
+    setSuccess("");
+    try {
+      const res = await fetch("/api/core-ai-apis", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(serverForm),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to save AI server");
+      }
+      setServerForm({ name: "", baseUrl: "", apiKey: "" });
+      setSuccess(`Saved AI server "${data.name}".`);
+      await fetchAiServers();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save AI server");
+    } finally {
+      setServerSaving(false);
+    }
+  };
+
+  const updateTenantAiServer = async (tenantId: string, value: string) => {
+    setSelectionSaving((prev) => ({ ...prev, [tenantId]: true }));
+    setError("");
+    setSuccess("");
+    const coreAiApiId = value === DEFAULT_AI_SERVER_VALUE ? null : value;
+    try {
+      const res = await fetch(`/api/tenants/${tenantId}/core-ai`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ coreAiApiId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to update AI server");
+      }
+      setClients((prev) =>
+        prev.map((client) =>
+          client.id === tenantId
+            ? { ...client, coreAiApiId: data.coreAiApiId, coreAiApi: data.coreAiApi }
+            : client
+        )
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update AI server");
+    } finally {
+      setSelectionSaving((prev) => ({ ...prev, [tenantId]: false }));
     }
   };
 
@@ -203,6 +311,33 @@ export function ClientManager() {
             </Button>
           </div>
         </div>
+        <div className="space-y-2 lg:col-span-1">
+          <Label htmlFor="client-ai-server">AI Server</Label>
+          <Select
+            value={form.coreAiApiId || DEFAULT_AI_SERVER_VALUE}
+            onValueChange={(value) =>
+              setForm((prev) => ({
+                ...prev,
+                coreAiApiId: value === DEFAULT_AI_SERVER_VALUE ? "" : value,
+              }))
+            }
+          >
+            <SelectTrigger
+              id="client-ai-server"
+              className="w-full border-neutral-800 bg-neutral-950 text-neutral-100"
+            >
+              <SelectValue placeholder="Default AI Core" />
+            </SelectTrigger>
+            <SelectContent className="border-neutral-800 bg-neutral-950 text-neutral-100">
+              <SelectItem value={DEFAULT_AI_SERVER_VALUE}>Default AI Core</SelectItem>
+              {aiServers.map((server) => (
+                <SelectItem key={server.id} value={server.id} disabled={!server.isActive}>
+                  {server.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <div className="flex items-end">
           <Button
             type="submit"
@@ -215,12 +350,66 @@ export function ClientManager() {
         </div>
       </form>
 
+      <form onSubmit={createAiServer} className="mb-6 grid grid-cols-1 gap-4 border-y border-white/10 py-5 lg:grid-cols-12">
+        <div className="flex items-center gap-3 lg:col-span-3">
+          <ServerCog className="h-5 w-5 text-emerald-300" />
+          <div>
+            <h3 className="font-semibold text-white">AI Servers</h3>
+            <p className="text-xs text-neutral-500">Add compatible Core AI endpoints for tenants.</p>
+          </div>
+        </div>
+        <div className="space-y-2 lg:col-span-2">
+          <Label htmlFor="ai-server-name">Name</Label>
+          <Input
+            id="ai-server-name"
+            value={serverForm.name}
+            onChange={(event) => setServerForm((prev) => ({ ...prev, name: event.target.value }))}
+            className="bg-neutral-950 border-neutral-800 text-neutral-100"
+            placeholder="Production Core"
+            required
+          />
+        </div>
+        <div className="space-y-2 lg:col-span-4">
+          <Label htmlFor="ai-server-url">Base URL</Label>
+          <Input
+            id="ai-server-url"
+            value={serverForm.baseUrl}
+            onChange={(event) => setServerForm((prev) => ({ ...prev, baseUrl: event.target.value }))}
+            className="bg-neutral-950 border-neutral-800 text-neutral-100 font-mono"
+            placeholder="https://api.example.com"
+            required
+          />
+        </div>
+        <div className="space-y-2 lg:col-span-2">
+          <Label htmlFor="ai-server-key">API Key</Label>
+          <Input
+            id="ai-server-key"
+            type="password"
+            value={serverForm.apiKey}
+            onChange={(event) => setServerForm((prev) => ({ ...prev, apiKey: event.target.value }))}
+            className="bg-neutral-950 border-neutral-800 text-neutral-100 font-mono"
+            placeholder="Optional"
+          />
+        </div>
+        <div className="flex items-end lg:col-span-1">
+          <Button
+            type="submit"
+            disabled={serverSaving}
+            className="w-full bg-emerald-600 text-white hover:bg-emerald-500"
+            title="Add AI server"
+          >
+            {serverSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+          </Button>
+        </div>
+      </form>
+
       <div className="overflow-x-auto rounded-xl border border-white/10">
-        <div className="min-w-[900px]">
+        <div className="min-w-[1040px]">
           <div className="grid grid-cols-12 gap-3 bg-white/5 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-neutral-400">
-            <div className="col-span-3">Client</div>
+            <div className="col-span-2">Client</div>
             <div className="col-span-2">Slug</div>
-            <div className="col-span-3">Email</div>
+            <div className="col-span-2">Email</div>
+            <div className="col-span-2">AI Server</div>
             <div className="col-span-3">Voice Webhook</div>
             <div className="col-span-1 text-right">Channels</div>
           </div>
@@ -237,9 +426,28 @@ export function ClientManager() {
                 key={client.id}
                 className="grid grid-cols-12 gap-3 border-t border-white/5 px-4 py-3 text-sm text-neutral-300 hover:bg-white/[0.03]"
               >
-                <div className="col-span-3 font-medium text-white truncate">{client.name}</div>
+                <div className="col-span-2 font-medium text-white truncate">{client.name}</div>
                 <div className="col-span-2 font-mono text-cyan-300 truncate">{client.slug}</div>
-                <div className="col-span-3 truncate">{client.email}</div>
+                <div className="col-span-2 truncate">{client.email}</div>
+                <div className="col-span-2">
+                  <Select
+                    value={client.coreAiApiId || DEFAULT_AI_SERVER_VALUE}
+                    onValueChange={(value) => updateTenantAiServer(client.id, value)}
+                    disabled={selectionSaving[client.id] || serversLoading}
+                  >
+                    <SelectTrigger className="h-8 w-full border-neutral-800 bg-neutral-950 text-xs text-neutral-100">
+                      <SelectValue placeholder="Default AI Core" />
+                    </SelectTrigger>
+                    <SelectContent className="border-neutral-800 bg-neutral-950 text-neutral-100">
+                      <SelectItem value={DEFAULT_AI_SERVER_VALUE}>Default AI Core</SelectItem>
+                      {aiServers.map((server) => (
+                        <SelectItem key={server.id} value={server.id} disabled={!server.isActive}>
+                          {server.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
                 <div className="col-span-3 font-mono text-xs text-neutral-400 truncate">
                   {voiceBaseUrl}/voice/{client.slug}
                 </div>

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { callTenantAiCoreInteract, extractAiCoreReply } from "@/lib/ai-core";
 import { createMessageWithContact } from "@/lib/operator";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
@@ -8,7 +9,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
   try {
     const tenant = await prisma.tenant.findUnique({
       where: { slug },
-      include: { channelConfigs: { where: { channelType: "twilio_sms" } } }
+      include: {
+        coreAiApi: true,
+        channelConfigs: { where: { channelType: "twilio_sms" } },
+      }
     });
 
     if (!tenant) {
@@ -52,24 +56,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
       externalMessageId: externalMessageId || undefined
     });
 
-    const aiResponse = await fetch("https://api.operaios.qzz.io/api/v1/call/interact", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-internal-api-key": "dev-secret"
-      },
-      body: JSON.stringify({
-        company_slug: slug,
-        call_sid: `sms-${externalMessageId}`,
-        text: messageText,
-        channel: "twilio_sms"
-      })
+    const aiResponse = await callTenantAiCoreInteract(tenant, {
+      company_slug: slug,
+      call_sid: `sms-${externalMessageId}`,
+      text: messageText,
+      channel: "twilio_sms",
     });
 
     let aiReplyText = "I'm sorry, I couldn't process that request right now.";
     if (aiResponse.ok) {
       const data = await aiResponse.json();
-      aiReplyText = data.reply || data.response_text || data.text || aiReplyText;
+      aiReplyText = extractAiCoreReply(data, aiReplyText);
     }
 
     await createMessageWithContact({

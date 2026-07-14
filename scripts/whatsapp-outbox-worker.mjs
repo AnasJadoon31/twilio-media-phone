@@ -24,6 +24,15 @@ const prisma = new PrismaClient({ adapter });
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+function aiCoreTargetForTenant(tenant) {
+  const selected = tenant?.coreAiApi?.isActive ? tenant.coreAiApi : null;
+  return {
+    baseUrl: (selected?.baseUrl || AI_CORE_URL || "").replace(/\/$/, ""),
+    apiKey: selected?.apiKey || AI_CORE_API_KEY,
+    source: selected ? "tenant" : "default",
+  };
+}
+
 function normalizeNumber(chatId) {
   if (chatId.endsWith("@s.whatsapp.net")) return chatId.replace("@s.whatsapp.net", "");
   if (chatId.endsWith("@c.us")) return chatId.replace("@c.us", "");
@@ -115,13 +124,14 @@ async function sendAudio(instanceName, chatId, audioBase64, audioMime) {
 }
 
 async function callCoreAI({ tenant, text, sourceMessageId, metadata }) {
-  if (!AI_CORE_URL) throw new Error("AI_CORE_URL is required for text processing.");
+  const target = aiCoreTargetForTenant(tenant);
+  if (!target.baseUrl) throw new Error("AI_CORE_URL is required for text processing.");
 
-  const response = await fetch(`${AI_CORE_URL}/api/v1/call/interact`, {
+  const response = await fetch(`${target.baseUrl}/api/v1/call/interact`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-internal-api-key": AI_CORE_API_KEY,
+      "x-internal-api-key": target.apiKey,
     },
     body: JSON.stringify({
       company_slug: tenant.slug,
@@ -465,7 +475,11 @@ async function claimJobs() {
       nextRunAt: { lte: new Date() },
     },
     include: {
-      tenant: true,
+      tenant: {
+        include: {
+          coreAiApi: true,
+        },
+      },
       message: true,
     },
     orderBy: { createdAt: "asc" },

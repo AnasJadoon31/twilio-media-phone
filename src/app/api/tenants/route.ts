@@ -19,6 +19,13 @@ type TenantListItem = {
   name: string;
   slug: string;
   email: string;
+  coreAiApiId: string | null;
+  coreAiApi: {
+    id: string;
+    name: string;
+    baseUrl: string;
+    isActive: boolean;
+  } | null;
   createdAt: Date;
   _count: {
     channelConfigs: number;
@@ -45,6 +52,15 @@ export async function GET() {
         name: true,
         slug: true,
         email: true,
+        coreAiApiId: true,
+        coreAiApi: {
+          select: {
+            id: true,
+            name: true,
+            baseUrl: true,
+            isActive: true,
+          },
+        },
         createdAt: true,
         _count: {
           select: {
@@ -61,6 +77,8 @@ export async function GET() {
         name: tenant.name,
         slug: tenant.slug,
         email: tenant.email,
+        coreAiApiId: tenant.coreAiApiId,
+        coreAiApi: tenant.coreAiApi,
         createdAt: tenant.createdAt,
         channelCount: tenant._count.channelConfigs,
         messageCount: tenant._count.messages,
@@ -89,6 +107,7 @@ export async function POST(req: Request) {
     const email = String(body.email || "").trim().toLowerCase();
     const password = String(body.password || "");
     const slug = normalizeSlug(String(body.slug || name));
+    const coreAiApiId = body.coreAiApiId ? String(body.coreAiApiId) : null;
 
     if (!name) {
       return NextResponse.json({ error: "Client name is required" }, { status: 400 });
@@ -106,6 +125,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Password must be at least 8 characters" }, { status: 400 });
     }
 
+    if (coreAiApiId) {
+      const server = await prisma.coreAiApi.findUnique({
+        where: { id: coreAiApiId },
+        select: { id: true },
+      });
+      if (!server) {
+        return NextResponse.json({ error: "Selected AI server does not exist" }, { status: 400 });
+      }
+    }
+
     const passwordHash = await bcrypt.hash(password, 10);
     const tenant = await prisma.tenant.create({
       data: {
@@ -113,12 +142,22 @@ export async function POST(req: Request) {
         slug,
         email,
         passwordHash,
+        coreAiApiId,
       },
       select: {
         id: true,
         name: true,
         slug: true,
         email: true,
+        coreAiApiId: true,
+        coreAiApi: {
+          select: {
+            id: true,
+            name: true,
+            baseUrl: true,
+            isActive: true,
+          },
+        },
         createdAt: true,
       },
     });

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { callTenantAiCoreInteract, extractAiCoreReply } from "@/lib/ai-core";
 import { createMessageWithContact } from "@/lib/operator";
 
 const GRAPH_API_VERSION = process.env.META_GRAPH_API_VERSION || "v23.0";
@@ -85,7 +86,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
   if (mode === "subscribe" && token) {
     const tenant = await prisma.tenant.findUnique({
       where: { slug },
-      include: { channelConfigs: { where: { channelType: "whatsapp" } } }
+      include: {
+        coreAiApi: true,
+        channelConfigs: { where: { channelType: "whatsapp" } },
+      }
     });
 
     if (tenant && tenant.channelConfigs[0]?.verifyToken === token) {
@@ -104,7 +108,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
   try {
     const tenant = await prisma.tenant.findUnique({
       where: { slug },
-      include: { channelConfigs: { where: { channelType: "whatsapp" } } }
+      include: {
+        coreAiApi: true,
+        channelConfigs: { where: { channelType: "whatsapp" } },
+      }
     });
 
     if (!tenant) return new NextResponse("Not Found", { status: 404 });
@@ -150,24 +157,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
     let aiReplyText = "I'm sorry, I couldn't process that request right now.";
 
     try {
-      // Send to AI Core
-      const aiResponse = await fetch("https://api.operaios.qzz.io/api/v1/call/interact", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-internal-api-key": "dev-secret" // Keeping system hardcoded key for AI Core communication as seen in metrics
-        },
-        body: JSON.stringify({
-          company_slug: slug,
-          call_sid: `wa-${externalMessageId}`,
-          text: messageText,
-          channel: "whatsapp"
-        })
+      const aiResponse = await callTenantAiCoreInteract(tenant, {
+        company_slug: slug,
+        call_sid: `wa-${externalMessageId}`,
+        text: messageText,
+        channel: "whatsapp",
       });
 
       if (aiResponse.ok) {
         const data = await aiResponse.json();
-        aiReplyText = data.reply || data.response_text || data.text || aiReplyText;
+        aiReplyText = extractAiCoreReply(data, aiReplyText);
       } else {
         console.error(`[WhatsApp:${slug}] AI Core returned HTTP ${aiResponse.status}`);
       }

@@ -12,9 +12,11 @@ model Tenant {
   name          String
   email         String          @unique
   passwordHash  String
+  coreAiApiId   String?
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 
+  coreAiApi      CoreAiApi?      @relation(fields: [coreAiApiId], references: [id], onDelete: SetNull)
   channelConfigs ChannelConfig[]
   messages       Message[]
   contactProfiles ContactProfile[]
@@ -22,6 +24,20 @@ model Tenant {
   notifications   Notification[]
   outboundMessageJobs OutboundMessageJob[]
   whatsappGroupSettings WhatsAppGroupSetting[]
+
+  @@index([coreAiApiId])
+}
+
+model CoreAiApi {
+  id          String   @id @default(uuid())
+  name        String
+  baseUrl     String   @unique
+  apiKey      String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenants     Tenant[]
 }
 
 model ChannelConfig {
